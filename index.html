@@ -1907,6 +1907,15 @@
         <button onclick="document.getElementById('csvFile').click()">📊 Charger BDD locale</button>
         <button onclick="document.getElementById('bookingFile').click()">📋 Charger BOOKING local</button>
       </div>
+      <!-- Mode Test -->
+      <div style="margin-top:18px;padding-top:15px;border-top:1px dashed #ffc107;">
+        <div style="font-size:0.85em;color:#856404;margin-bottom:10px;">
+          🧪 <strong>Mode Test</strong> — Données fictives, champs non obligatoires, navigation libre entre toutes les étapes.
+        </div>
+        <button onclick="activateTestMode()" style="background:linear-gradient(135deg,#e67e22,#d35400);color:white;width:100%;font-size:14px;padding:13px;">
+          🧪 Activer le Mode Test
+        </button>
+      </div>
     </div>
       
       <!-- Inputs fichiers cachés -->
@@ -3702,6 +3711,25 @@
       if (window.isScanning) window.stopCamera();
       
       const code = document.getElementById("barcodeInput").value.trim();
+
+      // En mode test avec champ vide, sélectionner le premier produit de la référence courante
+      if (TEST_MODE && !code) {
+        let autoProduct = null;
+        if (currentBooking && bookingReferences.length > 0) {
+          const currentRef = bookingReferences[currentReferenceIndex];
+          if (currentRef && currentRef.items.length > 0) {
+            autoProduct = currentRef.items[0];
+          }
+        }
+        if (!autoProduct && database.length > 0) autoProduct = database[0];
+        if (autoProduct) {
+          document.getElementById("barcodeInput").value = autoProduct[COL_EAN] || 'EAN-TEST';
+          proceedWithProduct(autoProduct);
+          window.NotificationManager.show('🧪 [MODE TEST] Produit auto-sélectionné', 'info');
+        }
+        return;
+      }
+
       if (!code) {
         window.NotificationManager.show("Veuillez entrer un code EAN", 'warning');
         return;
@@ -3952,9 +3980,9 @@
       productQualityResults = {};
 
       // Désactiver les boutons de validation
-      document.getElementById('packageValidateButton').disabled = true;
+      document.getElementById('packageValidateButton').disabled = !TEST_MODE;
       if (document.getElementById('productValidateButton')) {
-        document.getElementById('productValidateButton').disabled = true;
+        document.getElementById('productValidateButton').disabled = !TEST_MODE;
       }
     }
 
@@ -3964,8 +3992,8 @@
       const packageCondition = document.querySelector('input[name="package_condition"]:checked');
       const warrantySeal = document.querySelector('input[name="warranty_seal"]:checked');
 
-      // Activer le bouton si tous les critères sont évalués
-      const allChecked = shippingMark && packageCondition && warrantySeal;
+      // En mode test, activer le bouton même si les champs ne sont pas remplis
+      const allChecked = TEST_MODE ? true : (shippingMark && packageCondition && warrantySeal);
       document.getElementById('packageValidateButton').disabled = !allChecked;
 
       // Mettre à jour l'objet des résultats du carton
@@ -3997,8 +4025,8 @@
       const colorCheck = document.querySelector('input[name="color_check"]:checked');
       const finishingCheck = document.querySelector('input[name="finishing_check"]:checked');
 
-      // Activer le bouton si tous les critères sont évalués
-      const allChecked = zipTest && buttonCheck && colorCheck && finishingCheck;
+      // En mode test, activer le bouton même si les champs ne sont pas remplis
+      const allChecked = TEST_MODE ? true : (zipTest && buttonCheck && colorCheck && finishingCheck);
       document.getElementById('productValidateButton').disabled = !allChecked;
 
       // Mettre à jour l'objet des résultats du produit
@@ -4031,6 +4059,15 @@
     function proceedToProductControl() {
       // Arrêter les scanners actifs
       if (window.isScanning) window.stopCamera();
+      
+      // En mode test, remplir les résultats fictifs si vides
+      if (TEST_MODE && Object.keys(packageQualityResults).length === 0) {
+        packageQualityResults = {
+          shipping_mark: { status: 'ok', comment: '[MODE TEST]', photos: [] },
+          package_condition: { status: 'ok', comment: '[MODE TEST]', photos: [] },
+          warranty_seal: { status: 'ok', comment: '[MODE TEST]', photos: [] }
+        };
+      }
       
       updatePackageQualityStatus();
       
@@ -4077,6 +4114,15 @@
     }
 
     function proceedToEanControl() {
+      // En mode test, remplir les résultats fictifs si vides
+      if (TEST_MODE && Object.keys(productQualityResults).length === 0) {
+        productQualityResults = {
+          zip_test: { status: 'ok', comment: '[MODE TEST]', photos: [] },
+          button_check: { status: 'ok', comment: '[MODE TEST]', photos: [] },
+          color_check: { status: 'ok', comment: '[MODE TEST]', photos: [] },
+          finishing_check: { status: 'ok', comment: '[MODE TEST]', photos: [] }
+        };
+      }
       updateProductQualityStatus();
       
       if (!currentProduct || !currentProduct[COL_REF]) {
@@ -4117,12 +4163,18 @@
       displayEanList();
       updateEanProgress();
       
-      // Désactiver le bouton "Terminer cette référence" au début
+      // En mode test, activer directement le bouton "Terminer cette référence"
       const completeButton = document.getElementById('completeReferenceButton');
       if (completeButton) {
-        completeButton.disabled = true;
-        completeButton.style.opacity = '0.5';
-        completeButton.style.cursor = 'not-allowed';
+        if (TEST_MODE) {
+          completeButton.disabled = false;
+          completeButton.style.opacity = '1';
+          completeButton.style.cursor = 'pointer';
+        } else {
+          completeButton.disabled = true;
+          completeButton.style.opacity = '0.5';
+          completeButton.style.cursor = 'not-allowed';
+        }
       }
 
       // Scroll vers la section de contrôle EAN
@@ -4323,7 +4375,7 @@
       document.getElementById('progressText').textContent = `${checked} vérifiés + ${nonTested} non testés = ${processed} / ${total} EAN traités`;
 
       // Afficher un résumé si tous les EAN sont traités
-      if (processed === total && total > 0) {
+      if ((processed === total && total > 0) || (TEST_MODE && total > 0)) {
         showEanValidationResult();
       }
     }
@@ -6052,6 +6104,118 @@
     //   
     const MASTER_PASSWORD = "262626";
     //
+    // =======================================
+
+    // =======================================
+    // 🧪 MODE TEST
+    // =======================================
+    let TEST_MODE = false;
+
+    function activateTestMode() {
+      TEST_MODE = true;
+
+      // Données fictives pour la BDD
+      database = [
+        ['REF-TEST-001', 'ART-001', 'ROUGE', 'M', 'MARQUE_A', '1234567890001'],
+        ['REF-TEST-001', 'ART-001', 'ROUGE', 'L', 'MARQUE_A', '1234567890002'],
+        ['REF-TEST-001', 'ART-001', 'ROUGE', 'XL', 'MARQUE_A', '1234567890003'],
+        ['REF-TEST-002', 'ART-002', 'BLEU', 'S', 'MARQUE_B', '1234567890004'],
+        ['REF-TEST-002', 'ART-002', 'BLEU', 'M', 'MARQUE_B', '1234567890005'],
+        ['REF-TEST-003', 'ART-003', 'VERT', 'L', 'MARQUE_C', '1234567890006'],
+      ];
+
+      bookingData = [
+        ['BK-TEST-001', 'FOURN-001', 'ART-001'],
+        ['BK-TEST-001', 'FOURN-001', 'ART-002'],
+        ['BK-TEST-001', 'FOURN-002', 'ART-003'],
+        ['BK-TEST-002', 'FOURN-001', 'ART-001'],
+      ];
+
+      bddLoaded = true;
+      bookingLoaded = true;
+
+      extractBookings();
+
+      // Afficher la bannière test
+      showTestModeBanner();
+
+      // Patcher les fonctions de validation
+      patchForTestMode();
+
+      // Passer directement à la sélection de booking
+      setTimeout(() => {
+        proceedToBookingSelection();
+      }, 300);
+
+      window.NotificationManager.show('🧪 Mode Test activé — champs obligatoires désactivés', 'warning', 6000);
+    }
+
+    function showTestModeBanner() {
+      if (document.getElementById('testModeBanner')) return;
+      const banner = document.createElement('div');
+      banner.id = 'testModeBanner';
+      banner.innerHTML = `
+        🧪 MODE TEST ACTIF — Les champs obligatoires sont ignorés
+        <button onclick="deactivateTestMode()" style="margin-left:15px;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.5);color:white;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:12px;">✖ Désactiver</button>
+      `;
+      banner.style.cssText = `
+        position: fixed; top: 0; left: 0; right: 0; z-index: 99999;
+        background: linear-gradient(90deg, #e67e22, #d35400);
+        color: white; text-align: center; padding: 8px 20px;
+        font-weight: bold; font-size: 14px; box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+      `;
+      document.body.prepend(banner);
+      document.body.style.paddingTop = '40px';
+    }
+
+    function deactivateTestMode() {
+      TEST_MODE = false;
+      const banner = document.getElementById('testModeBanner');
+      if (banner) banner.remove();
+      document.body.style.paddingTop = '';
+      window.NotificationManager.show('Mode Test désactivé', 'info');
+    }
+
+    function patchForTestMode() {
+      // Surcharge updatePackageQualityStatus : active le bouton même sans radio cochés
+      const origPackage = window.updatePackageQualityStatus || updatePackageQualityStatus;
+      window._origUpdatePackageQualityStatus = origPackage;
+
+      // Surcharge updateProductQualityStatus : active le bouton même sans radio cochés
+      const origProduct = window.updateProductQualityStatus || updateProductQualityStatus;
+      window._origUpdateProductQualityStatus = origProduct;
+    }
+
+    // Wrappers de validation patchés selon TEST_MODE
+    function _testModeUpdatePackageQualityStatus() {
+      if (TEST_MODE) {
+        // Remplir des résultats fictifs et activer le bouton
+        packageQualityResults = {
+          shipping_mark: { status: 'ok', comment: '[MODE TEST]', photos: [] },
+          package_condition: { status: 'ok', comment: '[MODE TEST]', photos: [] },
+          warranty_seal: { status: 'ok', comment: '[MODE TEST]', photos: [] }
+        };
+        const btn = document.getElementById('packageValidateButton');
+        if (btn) { btn.disabled = false; }
+        return;
+      }
+      updatePackageQualityStatus();
+    }
+
+    function _testModeUpdateProductQualityStatus() {
+      if (TEST_MODE) {
+        productQualityResults = {
+          zip_test: { status: 'ok', comment: '[MODE TEST]', photos: [] },
+          button_check: { status: 'ok', comment: '[MODE TEST]', photos: [] },
+          color_check: { status: 'ok', comment: '[MODE TEST]', photos: [] },
+          finishing_check: { status: 'ok', comment: '[MODE TEST]', photos: [] }
+        };
+        const btn = document.getElementById('productValidateButton');
+        if (btn) { btn.disabled = false; }
+        return;
+      }
+      updateProductQualityStatus();
+    }
     // =======================================
 
     function checkPassword() {
