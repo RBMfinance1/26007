@@ -154,102 +154,454 @@
     };
 
     // Variables globales pour les scanners
-    let codeReader = null;
-    let eanCodeReader = null;
     window.isScanning = false;
     window.isEanScanning = false;
   </script>
   
-  <script type="module">
-    import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm';
+  <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script>
+  // ================================================================================================
+  // 📷 SCANNER UNIVERSEL — html5-qrcode | Mobile: plein écran | Tablette/Desktop: fenêtre agrandie
+  // ================================================================================================
 
-    // Exposer BrowserMultiFormatReader globalement
-    window.BrowserMultiFormatReader = BrowserMultiFormatReader;
+  // Détection device
+  function _isMobileDevice() {
+    const ua = navigator.userAgent || '';
+    const isMobileUA = /iPhone|iPod|Android.*Mobile|Windows Phone/i.test(ua);
+    const isSmallScreen = window.innerWidth < 768;
+    return isMobileUA || isSmallScreen;
+  }
 
-    // Scanner amélioré avec gestion d'erreurs
-    window.startCamera = async function() {
-      const video = document.getElementById('video');
-      const scanButton = document.getElementById('scanButton');
-      const stopButton = document.getElementById('stopButton');
-      
-      try {
-        if (window.codeReader) {
-          window.codeReader.reset();
-        }
-        
-        window.codeReader = new window.BrowserMultiFormatReader();
-        const constraints = {
-          video: {
-            facingMode: 'environment',
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        };
-        
-        await window.codeReader.decodeFromConstraints(constraints, video, (result, err) => {
-          if (result && window.isScanning) {
-            document.getElementById("barcodeInput").value = result.text;
-            window.stopCamera();
-            findProduct();
-            if (navigator.vibrate) {
-              navigator.vibrate(200);
-            }
-            window.NotificationManager.show('Code scanné avec succès!', 'success');
-          }
-        });
-        
-        window.isScanning = true;
-        video.style.display = 'block';
-        scanButton.style.display = 'none';
-        stopButton.style.display = 'inline-block';
-        document.getElementById('scannerContainer').style.display = 'block';
-        
-      } catch (err) {
-        console.error('Erreur caméra:', err);
-        window.NotificationManager.show('Impossible d\'accéder à la caméra. Vérifiez les permissions.', 'error');
-        resetCameraButtons();
-      }
-    };
+  // ── Variables d'état ──────────────────────────────────────────────────────────
+  window.isScanning    = false;
+  window.isEanScanning = false;
+  let _scanner1 = null;   // scanner étape 4 (produit)
+  let _scanner2 = null;   // scanner étape 7 (EAN)
 
-    window.stopCamera = function() {
-      window.isScanning = false;
-      
-      const video = document.getElementById('video');
-      if (video && video.srcObject) {
-        const stream = video.srcObject;
-        if (stream) {
-          stream.getTracks().forEach(track => {
-            track.stop();
-          });
-          video.srcObject = null;
-        }
+  // ── Injection CSS overlay plein écran ─────────────────────────────────────────
+  (function injectScannerStyles() {
+    const style = document.createElement('style');
+    style.textContent = `
+      /* Overlay plein écran mobile */
+      #scanOverlayFull {
+        display: none;
+        position: fixed; inset: 0; z-index: 99997;
+        background: #000;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
       }
-      
-      if (window.codeReader) {
-        try {
-          window.codeReader.reset();
-        } catch (e) {
-          console.log('Erreur lors de l\'arrêt de la caméra:', e);
-        }
-        window.codeReader = null;
-      }
-      
-      resetCameraButtons();
-    };
+      #scanOverlayFull.active { display: flex; }
 
-    function resetCameraButtons() {
-      const video = document.getElementById('video');
-      if (video) {
-        video.style.display = 'none';
-        if (video.srcObject) {
-          video.srcObject = null;
-        }
+      #scanOverlayFull video {
+        width: 100vw;
+        height: 100dvh;
+        object-fit: cover;
+        position: absolute; inset: 0;
       }
-      
-      document.getElementById('scanButton').style.display = 'inline-block';
-      document.getElementById('stopButton').style.display = 'none';
-      document.getElementById('scannerContainer').style.display = 'none';
+
+      /* Cadre de visée */
+      .scan-aim {
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -60%);
+        width: min(80vw, 300px);
+        height: min(80vw, 300px);
+        border: 3px solid rgba(255,255,255,0.3);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .scan-aim::before,
+      .scan-aim::after,
+      .scan-aim-tl::before, .scan-aim-tl::after,
+      .scan-aim-br::before, .scan-aim-br::after {
+        content: ''; position: absolute;
+        width: 28px; height: 28px;
+        border-color: #00ff88; border-style: solid;
+      }
+      .scan-aim::before  { top:0; left:0;  border-width:4px 0 0 4px; border-radius:8px 0 0 0; }
+      .scan-aim::after   { top:0; right:0; border-width:4px 4px 0 0; border-radius:0 8px 0 0; }
+      .scan-aim-br::before { bottom:0; left:0;  border-width:0 0 4px 4px; border-radius:0 0 0 8px; }
+      .scan-aim-br::after  { bottom:0; right:0; border-width:0 4px 4px 0; border-radius:0 0 8px 0; }
+
+      /* Ligne laser */
+      .scan-laser {
+        position: absolute;
+        left: 8px; right: 8px;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, #00ff88, transparent);
+        box-shadow: 0 0 8px #00ff88;
+        animation: laserSweep 1.8s ease-in-out infinite;
+        top: 10%;
+      }
+      @keyframes laserSweep {
+        0%   { top: 10%; }
+        50%  { top: 85%; }
+        100% { top: 10%; }
+      }
+
+      /* Flash succès */
+      .scan-flash {
+        position: absolute; inset: 0;
+        background: rgba(0,255,136,0.35);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.1s;
+      }
+      .scan-flash.show { opacity: 1; }
+
+      /* Barre top overlay */
+      .scan-topbar {
+        position: absolute; top: 0; left: 0; right: 0;
+        padding: env(safe-area-inset-top, 12px) 16px 12px;
+        padding-top: max(env(safe-area-inset-top), 12px);
+        display: flex; align-items: center; justify-content: space-between;
+        background: linear-gradient(to bottom, rgba(0,0,0,0.7), transparent);
+        z-index: 2;
+      }
+      .scan-topbar-title {
+        color: white; font-weight: bold; font-size: 15px;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+      }
+      .scan-close-btn {
+        background: rgba(255,255,255,0.18);
+        border: 1px solid rgba(255,255,255,0.35);
+        color: white; border-radius: 50%;
+        width: 38px; height: 38px;
+        font-size: 18px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        backdrop-filter: blur(4px);
+      }
+
+      /* Hint bas */
+      .scan-hint {
+        position: absolute;
+        top: calc(50% + min(40vw, 150px) - 20px);
+        left: 50%; transform: translateX(-50%);
+        color: rgba(255,255,255,0.75);
+        font-size: 13px; text-align: center;
+        white-space: nowrap;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+      }
+
+      /* Bouton torche */
+      .scan-torch-btn {
+        position: absolute;
+        bottom: max(env(safe-area-inset-bottom, 20px), 30px);
+        left: 50%; transform: translateX(-50%);
+        background: rgba(255,255,255,0.18);
+        border: 1px solid rgba(255,255,255,0.35);
+        color: white; border-radius: 50px;
+        padding: 10px 24px; font-size: 14px; cursor: pointer;
+        backdrop-filter: blur(4px);
+        display: none;
+      }
+
+      /* Zone html5qr masquée (on gère notre propre UI) */
+      #_h5qr_1, #_h5qr_2 { display: none !important; }
+
+      /* ── Mode tablette/desktop : fenêtre dans la page ─────────────── */
+      .scanner-tablet-box {
+        position: relative;
+        width: 100%;
+        max-width: 600px;
+        margin: 12px auto;
+        border-radius: 16px;
+        overflow: hidden;
+        background: #000;
+        aspect-ratio: 4/3;
+      }
+      .scanner-tablet-box video {
+        width: 100%; height: 100%;
+        object-fit: cover; display: block;
+      }
+      .scanner-tablet-box .scan-aim {
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: min(60%, 240px);
+        height: min(60%, 240px);
+      }
+      .scanner-tablet-box .scan-hint {
+        top: auto;
+        bottom: 12px;
+        left: 50%; transform: translateX(-50%);
+      }
+    `;
+    document.head.appendChild(style);
+  })();
+
+  // ── Injection HTML overlay plein écran ───────────────────────────────────────
+  function _ensureOverlay() {
+    if (document.getElementById('scanOverlayFull')) return;
+    const div = document.createElement('div');
+    div.id = 'scanOverlayFull';
+    div.innerHTML = `
+      <div class="scan-topbar">
+        <span class="scan-topbar-title" id="scanOverlayTitle">📷 Scanner un code</span>
+        <button class="scan-close-btn" id="scanOverlayCloseBtn">✕</button>
+      </div>
+      <div id="scanOverlayVideoWrap" style="position:absolute;inset:0;"></div>
+      <div class="scan-aim" id="scanAimBox">
+        <div class="scan-aim-br"></div>
+        <div class="scan-laser"></div>
+      </div>
+      <div class="scan-hint" id="scanHintText">Placez le code-barres dans le cadre</div>
+      <div class="scan-flash" id="scanFlash"></div>
+      <button class="scan-torch-btn" id="scanTorchBtn">🔦 Torche</button>
+    `;
+    document.body.appendChild(div);
+  }
+
+  // ── Utilitaires ──────────────────────────────────────────────────────────────
+  function _flashSuccess() {
+    const f = document.getElementById('scanFlash');
+    if (!f) return;
+    f.classList.add('show');
+    setTimeout(() => f.classList.remove('show'), 180);
+  }
+
+  function _stopScanner(scannerRef) {
+    if (!scannerRef) return Promise.resolve();
+    return scannerRef.stop().catch(() => {}).finally(() => {
+      try { scannerRef.clear(); } catch(e) {}
+    });
+  }
+
+  // ── Lancement générique ───────────────────────────────────────────────────────
+  async function _startScanner({
+    containerId,   // id du div html5-qrcode
+    title,
+    onSuccess,
+    onStop,
+    tabletContainer, // élément DOM où injecter en mode tablette
+    scannerVarSetter // callback(scanner) pour stocker l'instance
+  }) {
+    _ensureOverlay();
+    const isMobile = _isMobileDevice();
+
+    // Conteneur html5-qrcode (caché, on monte le stream dessus)
+    let h5div = document.getElementById(containerId);
+    if (!h5div) {
+      h5div = document.createElement('div');
+      h5div.id = containerId;
+      document.body.appendChild(h5div);
     }
+
+    const scanner = new Html5Qrcode(containerId, { verbose: false });
+    scannerVarSetter(scanner);
+
+    const config = {
+      fps: 15,
+      qrbox: { width: 280, height: 180 },
+      aspectRatio: isMobile ? (window.innerHeight / window.innerWidth) : (4/3),
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.ITF,
+        Html5QrcodeSupportedFormats.QR_CODE,
+      ]
+    };
+
+    let torchOn = false;
+
+    try {
+      await scanner.start(
+        { facingMode: 'environment' },
+        config,
+        (decodedText) => {
+          _flashSuccess();
+          if (navigator.vibrate) navigator.vibrate([80, 40, 80]);
+          onSuccess(decodedText);
+        },
+        () => {} // erreurs frame ignorées
+      );
+    } catch(e) {
+      window.NotificationManager.show("Impossible d'accéder à la caméra. Vérifiez les permissions.", 'error');
+      scannerVarSetter(null);
+      return;
+    }
+
+    // Récupérer le vrai élément <video> créé par html5-qrcode
+    const realVideo = h5div.querySelector('video');
+
+    if (isMobile) {
+      // ── Mode plein écran ──────────────────────────────────────────────────────
+      const overlay    = document.getElementById('scanOverlayFull');
+      const videoWrap  = document.getElementById('scanOverlayVideoWrap');
+      const titleEl    = document.getElementById('scanOverlayTitle');
+      const closeBtn   = document.getElementById('scanOverlayCloseBtn');
+      const torchBtn   = document.getElementById('scanTorchBtn');
+      const hintEl     = document.getElementById('scanHintText');
+
+      titleEl.textContent = title;
+      hintEl.textContent  = 'Placez le code-barres dans le cadre';
+
+      // Déplacer la vidéo dans l'overlay
+      if (realVideo) {
+        realVideo.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
+        videoWrap.appendChild(realVideo);
+      }
+
+      overlay.classList.add('active');
+
+      // Torche
+      try {
+        const track = realVideo?.srcObject?.getVideoTracks?.()[0];
+        const caps  = track?.getCapabilities?.() || {};
+        if (caps.torch) {
+          torchBtn.style.display = 'block';
+          torchBtn.onclick = async () => {
+            torchOn = !torchOn;
+            await track.applyConstraints({ advanced: [{ torch: torchOn }] }).catch(()=>{});
+            torchBtn.textContent = torchOn ? '🔦 Torche ON' : '🔦 Torche';
+          };
+        } else {
+          torchBtn.style.display = 'none';
+        }
+      } catch(e) { torchBtn.style.display = 'none'; }
+
+      // Fermeture
+      const closeHandler = () => {
+        overlay.classList.remove('active');
+        torchBtn.style.display = 'none';
+        torchOn = false;
+        closeBtn.removeEventListener('click', closeHandler);
+        _stopScanner(scanner).then(() => { scannerVarSetter(null); onStop(); });
+      };
+      closeBtn.addEventListener('click', closeHandler);
+      // Exposer pour fermeture programmatique
+      overlay._closeHandler = closeHandler;
+
+    } else {
+      // ── Mode tablette/desktop : injection dans la page ────────────────────────
+      if (!tabletContainer) return;
+      tabletContainer.innerHTML = '';
+      tabletContainer.style.display = 'block';
+
+      const box = document.createElement('div');
+      box.className = 'scanner-tablet-box';
+
+      if (realVideo) {
+        realVideo.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
+        box.style.position = 'relative';
+        box.appendChild(realVideo);
+      }
+
+      // Aim + laser
+      box.innerHTML += `
+        <div class="scan-aim" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:240px;height:160px;">
+          <div class="scan-aim-br"></div>
+          <div class="scan-laser"></div>
+        </div>
+        <div class="scan-hint" style="position:absolute;bottom:12px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.8);font-size:13px;">Placez le code dans le cadre</div>
+      `;
+      tabletContainer.appendChild(box);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // SCANNER 1 — Étape 4 (scan produit)
+  // ════════════════════════════════════════════════════════════════════════════
+  window.startCamera = async function() {
+    if (window.isScanning) return;
+    window.isScanning = true;
+
+    document.getElementById('scanButton').style.display = 'none';
+    document.getElementById('stopButton').style.display = 'inline-block';
+
+    const tabletContainer = document.getElementById('scannerContainer');
+
+    await _startScanner({
+      containerId: '_h5qr_1',
+      title: '📷 Scanner un produit',
+      scannerVarSetter: (s) => { _scanner1 = s; },
+      tabletContainer,
+      onSuccess: (code) => {
+        document.getElementById('barcodeInput').value = code;
+        window.stopCamera();
+        findProduct();
+        window.NotificationManager.show('Code scanné avec succès !', 'success');
+      },
+      onStop: () => {
+        window.isScanning = false;
+        _resetCameraButtons();
+      }
+    });
+  };
+
+  window.stopCamera = function() {
+    // Fermer overlay mobile si ouvert
+    const overlay = document.getElementById('scanOverlayFull');
+    if (overlay && overlay.classList.contains('active') && overlay._closeHandler) {
+      overlay._closeHandler();
+      return;
+    }
+    _stopScanner(_scanner1).then(() => {
+      _scanner1 = null;
+      window.isScanning = false;
+      _resetCameraButtons();
+    });
+  };
+
+  function _resetCameraButtons() {
+    document.getElementById('scanButton').style.display = 'inline-block';
+    document.getElementById('stopButton').style.display = 'none';
+    const sc = document.getElementById('scannerContainer');
+    if (sc) { sc.style.display = 'none'; sc.innerHTML = ''; }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // SCANNER 2 — Étape 7 (scan EAN)
+  // ════════════════════════════════════════════════════════════════════════════
+  window.startEanScanner = async function() {
+    if (window.isEanScanning) return;
+    window.isEanScanning = true;
+
+    document.getElementById('eanScanButton').style.display = 'none';
+    document.getElementById('eanStopButton').style.display = 'inline-block';
+
+    const tabletContainer = document.getElementById('eanScannerContainer');
+
+    await _startScanner({
+      containerId: '_h5qr_2',
+      title: '📷 Scanner un EAN',
+      scannerVarSetter: (s) => { _scanner2 = s; },
+      tabletContainer,
+      onSuccess: (code) => {
+        document.getElementById('eanInput').value = code;
+        checkEanForReference();
+        // Ne pas fermer le scanner EAN : on enchaîne les scans
+      },
+      onStop: () => {
+        window.isEanScanning = false;
+        _resetEanCameraButtons();
+      }
+    });
+  };
+
+  window.stopEanScanner = function() {
+    const overlay = document.getElementById('scanOverlayFull');
+    if (overlay && overlay.classList.contains('active') && overlay._closeHandler) {
+      overlay._closeHandler();
+      return;
+    }
+    _stopScanner(_scanner2).then(() => {
+      _scanner2 = null;
+      window.isEanScanning = false;
+      _resetEanCameraButtons();
+    });
+  };
+
+  function _resetEanCameraButtons() {
+    document.getElementById('eanScanButton').style.display = 'inline-block';
+    document.getElementById('eanStopButton').style.display = 'none';
+    const sc = document.getElementById('eanScannerContainer');
+    if (sc) { sc.style.display = 'none'; sc.innerHTML = ''; }
+  }
   </script>
   
   <style>
@@ -2009,18 +2361,7 @@
         <button onclick="showProductList()">📋 Choisir dans la liste</button>
       </div>
       
-      <div id="scannerContainer">
-        <div class="scanner-overlay">
-          <video id="video" playsinline></video>
-          <div class="scanner-frame">
-            <div class="scanner-corners corner-tl"></div>
-            <div class="scanner-corners corner-tr"></div>
-            <div class="scanner-corners corner-bl"></div>
-            <div class="scanner-corners corner-br"></div>
-          </div>
-        </div>
-        <div class="scan-instruction">Placez le code-barres dans le cadre</div>
-      </div>
+      <div id="scannerContainer" style="display:none;"></div>
       
       <div id="productListContainer" style="display:none;">
         <h4>🔍 Rechercher une référence</h4>
@@ -2285,18 +2626,7 @@
             <button id="eanStopButton" onclick="stopEanScanner()" style="display:none;">⏹️ Arrêter</button>
           </div>
           
-          <div id="eanScannerContainer" style="display:none;">
-            <div class="scanner-overlay">
-              <video id="eanVideo" playsinline></video>
-              <div class="scanner-frame">
-                <div class="scanner-corners corner-tl"></div>
-                <div class="scanner-corners corner-tr"></div>
-                <div class="scanner-corners corner-bl"></div>
-                <div class="scanner-corners corner-br"></div>
-              </div>
-            </div>
-            <div class="scan-instruction">Scanner les codes-barres de la référence</div>
-          </div>
+          <div id="eanScannerContainer" style="display:none;"></div>
           
           <label>⌨️ Ou saisir manuellement :</label>
           <input type="text" id="eanInput" placeholder="Scanner ou saisir un EAN de la référence..." />
@@ -4590,95 +4920,6 @@
         completeButton.style.opacity = '1';
         completeButton.style.cursor = 'pointer';
       }
-    }
-
-    function startEanScanner() {
-      const video = document.getElementById('eanVideo');
-      const scanButton = document.getElementById('eanScanButton');
-      const stopButton = document.getElementById('eanStopButton');
-      
-      try {
-        // Arrêter toute session précédente
-        if (window.eanCodeReader) {
-          window.eanCodeReader.reset();
-        }
-        
-        window.eanCodeReader = new window.BrowserMultiFormatReader();
-        const constraints = {
-          video: {
-            facingMode: 'environment',
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        };
-        
-        window.eanCodeReader.decodeFromConstraints(constraints, video, (result, err) => {
-          if (result && window.isEanScanning) {
-            document.getElementById("eanInput").value = result.text;
-            checkEanForReference();
-            if (navigator.vibrate) {
-              navigator.vibrate(200);
-            }
-          }
-        }).then(() => {
-          window.isEanScanning = true;
-          video.style.display = 'block';
-          scanButton.style.display = 'none';
-          stopButton.style.display = 'inline-block';
-          document.getElementById('eanScannerContainer').style.display = 'block';
-        }).catch(err => {
-          console.error('Erreur caméra EAN:', err);
-          window.NotificationManager.show('Impossible d\'accéder à la caméra pour le scan EAN.', 'error');
-          resetEanCameraButtons();
-        });
-        
-      } catch (err) {
-        console.error('Erreur initialisation scanner EAN:', err);
-        window.NotificationManager.show('Erreur lors de l\'initialisation du scanner EAN.', 'error');
-        resetEanCameraButtons();
-      }
-    }
-
-    function stopEanScanner() {
-      window.isEanScanning = false;
-      
-      // Arrêter le flux vidéo EAN
-      const eanVideo = document.getElementById('eanVideo');
-      if (eanVideo && eanVideo.srcObject) {
-        const stream = eanVideo.srcObject;
-        if (stream) {
-          stream.getTracks().forEach(track => {
-            track.stop();
-          });
-          eanVideo.srcObject = null;
-        }
-      }
-      
-      // Arrêter le code reader EAN
-      if (window.eanCodeReader) {
-        try {
-          window.eanCodeReader.reset();
-        } catch (e) {
-          console.log('Erreur lors de l\'arrêt de la caméra EAN:', e);
-        }
-        window.eanCodeReader = null;
-      }
-      
-      resetEanCameraButtons();
-    }
-
-    function resetEanCameraButtons() {
-      const eanVideo = document.getElementById('eanVideo');
-      if (eanVideo) {
-        eanVideo.style.display = 'none';
-        if (eanVideo.srcObject) {
-          eanVideo.srcObject = null;
-        }
-      }
-      
-      document.getElementById('eanScanButton').style.display = 'inline-block';
-      document.getElementById('eanStopButton').style.display = 'none';
-      document.getElementById('eanScannerContainer').style.display = 'none';
     }
 
     function checkEanForReference() {
