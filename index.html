@@ -3117,9 +3117,11 @@
       
       currentReferenceIndex = 0;
       completedReferences.clear();
+      ignoredReferences.clear();
       
       // Sauvegarder les références du booking
       window.StorageManager.save('bookingReferences', bookingReferences);
+      window.StorageManager.save('ignoredReferences', []);
     }
 
     function displayBookingReferences() {
@@ -3452,46 +3454,57 @@
     function reactivateReference(referenceCode) {
       if (confirm(`🔄 Réactiver la référence ${referenceCode} ?\n\nCette référence redeviendra disponible pour le contrôle.`)) {
         ignoredReferences.delete(referenceCode);
-        
-        // Sauvegarder dans le stockage local
         window.StorageManager.save('ignoredReferences', Array.from(ignoredReferences));
-        
-        // Repositionner sur la première référence non traitée (inclut celle qu'on vient de réactiver)
+
+        // Repositionner sur la première référence non traitée
         moveToNextUntreatedReference();
-        
-        // Mettre à jour l'affichage
-        displayBookingReferences();
-        updateBookingProgress();
 
-        // S'il reste des références non traitées, restaurer les boutons d'action
-        // (le booking n'est plus "complet" — annuler l'état de fin)
-        const stillHasUntreated = currentReferenceIndex < bookingReferences.length;
-        if (stillHasUntreated) {
-          // Retirer le booking de completedBookings car il n'est plus terminé
-          if (currentBooking) {
-            completedBookings.delete(currentBooking.number);
-            if (!TEST_MODE) {
-              window.StorageManager.save('completedBookings', Array.from(completedBookings));
-            }
+        // Retirer le booking de completedBookings — il n'est plus terminé
+        if (currentBooking) {
+          completedBookings.delete(currentBooking.number);
+          if (!TEST_MODE) {
+            window.StorageManager.save('completedBookings', Array.from(completedBookings));
           }
-
-          // Restaurer les boutons d'action et masquer les boutons rapport
-          document.getElementById("bookingActionButtons").style.display = "flex";
-          document.getElementById("reportButtons").style.display = "none";
-          document.getElementById("pdfButtonsSection").style.display = "none";
-
-          // Remettre le récap en état neutre
-          document.getElementById("currentBookingInfo").innerHTML = `
-            <h4>📋 Booking : ${currentBooking ? currentBooking.number : ''}</h4>
-            <strong>Fournisseur :</strong> ${currentSupplier || 'N/A'}<br/>
-            <strong>Références à contrôler :</strong> ${bookingReferences.length}<br/>
-            <strong>Statut :</strong> <span style="color:#856404;">⚠️ Contrôle en cours — référence réactivée</span>
-          `;
-
-          window.NotificationManager.show(`Référence ${referenceCode} réactivée — cliquez sur "Commencer le contrôle" pour continuer`, 'info', 5000);
-        } else {
-          window.NotificationManager.show(`Référence ${referenceCode} réactivée`, 'success');
         }
+
+        // Mettre à jour la progression et la liste
+        updateBookingProgress();
+        displayBookingReferences();
+
+        // Masquer le bouton intermédiaire fournisseur s'il existe
+        const nextBtn = document.getElementById('nextSupplierBtn');
+        if (nextBtn) nextBtn.style.display = 'none';
+
+        // Forcer l'état de l'interface : on est en étape 3, en cours de contrôle
+        // Masquer toutes les étapes de contrôle au cas où
+        ['step4','step5','step6','step7'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) { el.classList.add('hidden'); el.classList.remove('active','completed'); }
+        });
+
+        // S'assurer que step3 est visible et actif
+        const step3 = document.getElementById('step3');
+        step3.classList.remove('hidden', 'completed');
+        step3.classList.add('active');
+
+        // Restaurer les boutons d'action (Commencer le contrôle) et masquer les boutons rapport
+        document.getElementById("bookingActionButtons").style.display = "flex";
+        document.getElementById("reportButtons").style.display = "none";
+        document.getElementById("pdfButtonsSection").style.display = "none";
+
+        // Mettre à jour le récap booking
+        document.getElementById("currentBookingInfo").innerHTML = `
+          <h4>📋 Booking : ${currentBooking ? currentBooking.number : ''}</h4>
+          <strong>Fournisseur :</strong> ${currentSupplier || 'N/A'}<br/>
+          <strong>Références à contrôler :</strong> ${bookingReferences.length}<br/>
+          <strong>Statut :</strong> <span style="color:#856404;">⚠️ Référence réactivée — contrôle en cours</span>
+        `;
+
+        step3.scrollIntoView({ behavior: 'smooth' });
+        window.NotificationManager.show(
+          `Référence ${referenceCode} réactivée — cliquez sur "Commencer le contrôle" pour continuer`,
+          'info', 5000
+        );
       }
     }
 
@@ -4747,23 +4760,116 @@
     }
 
     function checkBookingCompletion() {
-      if (currentBooking && bookingReferences.length > 0) {
-        const allReferencesProcessed = bookingReferences.every(ref => 
-          completedReferences.has(ref.reference) || ignoredReferences.has(ref.reference)
-        );
-        
-        if (allReferencesProcessed) {
-          // Marquer le booking comme complètement traité
-          completedBookings.add(currentBooking.number);
-          // Ne pas sauvegarder dans le localStorage en mode test (pour ne pas polluer les vrais données)
-          if (!TEST_MODE) {
-            window.StorageManager.save('completedBookings', Array.from(completedBookings));
-          }
-          
-          // Afficher automatiquement la section des rapports
-          showBookingComplete();
+      if (!currentBooking || bookingReferences.length === 0) return;
+
+      const allCurrentSupplierDone = bookingReferences.every(ref => 
+        completedReferences.has(ref.reference) || ignoredReferences.has(ref.reference)
+      );
+      
+      if (!allCurrentSupplierDone) return;
+
+      // Vérifier s'il reste d'autres fournisseurs non encore sélectionnés dans ce booking
+      const allSuppliers = currentBooking.fournisseurs || [];
+      const remainingSuppliers = allSuppliers.filter(s => s !== currentSupplier);
+
+      if (remainingSuppliers.length > 0) {
+        // Il reste des fournisseurs → afficher un récap fournisseur et proposer de continuer
+        showSupplierComplete(remainingSuppliers);
+      } else {
+        // Tous les fournisseurs sont traités → booking vraiment terminé
+        completedBookings.add(currentBooking.number);
+        if (!TEST_MODE) {
+          window.StorageManager.save('completedBookings', Array.from(completedBookings));
         }
+        showBookingComplete();
       }
+    }
+
+    function showSupplierComplete(remainingSuppliers) {
+      // Masquer les étapes de contrôle
+      ['step4','step5','step6','step7'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.classList.add('hidden'); el.classList.remove('active','completed'); }
+      });
+
+      // Revenir à step3
+      const step3 = document.getElementById('step3');
+      step3.classList.remove('hidden','completed');
+      step3.classList.add('active');
+
+      updateBookingProgress();
+      displayBookingReferences();
+
+      const completedCount = completedReferences.size;
+      const ignoredCount = bookingReferences.filter(ref => ignoredReferences.has(ref.reference)).length;
+      const hasIgnored = ignoredCount > 0;
+
+      document.getElementById("currentBookingInfo").innerHTML = `
+        <div style="background:linear-gradient(135deg,#cce5ff,#b8daff);border:2px solid #004085;border-radius:10px;padding:15px;text-align:left;">
+          <h4 style="color:#004085;margin:0 0 10px 0;">✅ Fournisseur ${currentSupplier} terminé</h4>
+          <strong>Références contrôlées :</strong> ${completedCount} / ${bookingReferences.length} ✅<br/>
+          ${hasIgnored ? `<strong>Références ignorées :</strong> ${ignoredCount} / ${bookingReferences.length} ⏭️<br/>` : ''}
+          <div style="margin-top:12px;padding:10px;background:rgba(255,255,255,0.6);border-radius:6px;">
+            <strong>⚠️ Il reste ${remainingSuppliers.length} fournisseur${remainingSuppliers.length > 1 ? 's' : ''} à contrôler :</strong>
+            <ul style="margin:6px 0 0 0;padding-left:18px;">
+              ${remainingSuppliers.map(s => `<li>${s}</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+      `;
+
+      // Afficher bouton "Choisir un autre fournisseur" + boutons rapport
+      document.getElementById("bookingActionButtons").style.display = "none";
+      document.getElementById("reportButtons").style.display = "none";
+      document.getElementById("pdfButtonsSection").style.display = "none";
+
+      // Injecter un bouton dédié pour passer au fournisseur suivant
+      let nextBtn = document.getElementById('nextSupplierBtn');
+      if (!nextBtn) {
+        nextBtn = document.createElement('div');
+        nextBtn.id = 'nextSupplierBtn';
+        nextBtn.style.cssText = 'margin-top:15px;display:flex;gap:10px;flex-wrap:wrap;';
+        document.getElementById('step3').appendChild(nextBtn);
+      }
+      nextBtn.innerHTML = `
+        <button onclick="goToNextSupplier()" style="background:linear-gradient(135deg,#007bff,#0056b3);color:white;padding:12px 20px;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px;">
+          🏭 Contrôler le fournisseur suivant
+        </button>
+        <button onclick="showBookingComplete()" style="background:linear-gradient(135deg,#28a745,#1e7e34);color:white;padding:12px 20px;border:none;border-radius:8px;font-weight:bold;cursor:pointer;font-size:14px;">
+          📊 Terminer et générer les rapports
+        </button>
+      `;
+      nextBtn.style.display = 'flex';
+
+      window.NotificationManager.show(
+        `Fournisseur ${currentSupplier} terminé — ${remainingSuppliers.length} fournisseur(s) restant(s)`,
+        'info', 6000
+      );
+
+      step3.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function goToNextSupplier() {
+      // Masquer le bouton intermédiaire
+      const nextBtn = document.getElementById('nextSupplierBtn');
+      if (nextBtn) nextBtn.style.display = 'none';
+
+      // Retourner à la sélection du fournisseur (step2, partie fournisseur)
+      document.getElementById('step3').classList.add('hidden');
+      document.getElementById('step3').classList.remove('active');
+
+      document.getElementById('step2').classList.remove('completed','hidden');
+      document.getElementById('step2').classList.add('active');
+
+      // Afficher la liste des fournisseurs (pas la recherche booking)
+      document.getElementById('bookingSelectionContainer').classList.add('hidden');
+      document.getElementById('supplierSelectionContainer').classList.remove('hidden');
+
+      // Rafraîchir la liste des fournisseurs
+      displaySuppliers();
+
+      document.getElementById('step2').scrollIntoView({ behavior: 'smooth' });
+      window.NotificationManager.show('Choisissez le fournisseur suivant à contrôler', 'info', 4000);
     }
 
     function skipToNextReference() {
@@ -4843,6 +4949,10 @@
     }
 
     function showBookingComplete() {
+      // Masquer le bouton intermédiaire fournisseur s'il existe
+      const nextBtn = document.getElementById('nextSupplierBtn');
+      if (nextBtn) nextBtn.style.display = 'none';
+
       // Masquer toutes les étapes intermédiaires
       document.getElementById("step7").classList.remove("active");
       document.getElementById("step7").classList.add("hidden");
