@@ -6549,7 +6549,29 @@
     }
 
     function startNewBooking() {
-      if (confirm("🆕 Commencer un nouveau booking ?\n\nToutes les données actuelles seront perdues.")) {
+      // Détecter si le booking est terminé ou en cours
+      const isBookingDone = currentBooking && bookingReferences.length > 0 &&
+        bookingReferences.every(ref =>
+          completedReferences.has(ref.reference) || ignoredReferences.has(ref.reference)
+        );
+
+      if (isBookingDone) {
+        // Booking terminé → confirmation simple, pas d'avertissement
+        if (confirm(`✅ Booking ${currentBooking.number} terminé.\n\nCommencer un nouveau booking ?`)) {
+          _doStartNewBooking();
+        }
+      } else if (currentBooking) {
+        // Booking en cours → avertissement perte de données
+        if (confirm(`⚠️ Attention — contrôle en cours sur le booking ${currentBooking.number}.\n\nSi vous continuez, les données non sauvegardées seront perdues.\n\nAbandonner et commencer un nouveau booking ?`)) {
+          _doStartNewBooking();
+        }
+      } else {
+        // Pas de booking actif → pas de confirmation nécessaire
+        _doStartNewBooking();
+      }
+    }
+
+    function _doStartNewBooking() {
         // Réinitialiser complètement les données
         resetApplication();
 
@@ -6588,7 +6610,6 @@
         step2.scrollIntoView({ behavior: 'smooth' });
 
         window.NotificationManager.show("Nouveau booking — sélectionnez un booking", 'success');
-      }
     }
 
     function resetApplication() {
@@ -6910,7 +6931,7 @@
   const COLLAB_STORAGE_KEY = 'qc_collaborateurs';
   const CURRENT_COLLAB_KEY = 'qc_currentCollaborateur';
 
-  let currentCollaborateur = localStorage.getItem(CURRENT_COLLAB_KEY) || null;
+  let currentCollaborateur = null; // Toujours demandé à chaque session
   let syncPending = false;
   let syncInterval = null;
 
@@ -6966,7 +6987,7 @@
 
   function selectCollaborateur(name) {
     currentCollaborateur = name;
-    localStorage.setItem(CURRENT_COLLAB_KEY, name);
+    // Ne pas sauvegarder en localStorage : on demande à chaque session
     document.getElementById('collaborateurModal').style.display = 'none';
     updateSyncBadge();
     window.NotificationManager.show(`👤 Connecté : ${name}`, 'success', 3000);
@@ -7118,8 +7139,7 @@
     }
   });
 
-  // Initialiser le badge si collaborateur déjà en mémoire
-  if (currentCollaborateur) updateSyncBadge();
+  // La liste des noms est mémorisée, mais le collaborateur actif est toujours demandé à la connexion
 
   </script>
 </body>
