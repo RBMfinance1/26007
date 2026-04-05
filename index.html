@@ -3462,8 +3462,36 @@
         // Mettre à jour l'affichage
         displayBookingReferences();
         updateBookingProgress();
-        
-        window.NotificationManager.show(`Référence ${referenceCode} réactivée`, 'success');
+
+        // S'il reste des références non traitées, restaurer les boutons d'action
+        // (le booking n'est plus "complet" — annuler l'état de fin)
+        const stillHasUntreated = currentReferenceIndex < bookingReferences.length;
+        if (stillHasUntreated) {
+          // Retirer le booking de completedBookings car il n'est plus terminé
+          if (currentBooking) {
+            completedBookings.delete(currentBooking.number);
+            if (!TEST_MODE) {
+              window.StorageManager.save('completedBookings', Array.from(completedBookings));
+            }
+          }
+
+          // Restaurer les boutons d'action et masquer les boutons rapport
+          document.getElementById("bookingActionButtons").style.display = "flex";
+          document.getElementById("reportButtons").style.display = "none";
+          document.getElementById("pdfButtonsSection").style.display = "none";
+
+          // Remettre le récap en état neutre
+          document.getElementById("currentBookingInfo").innerHTML = `
+            <h4>📋 Booking : ${currentBooking ? currentBooking.number : ''}</h4>
+            <strong>Fournisseur :</strong> ${currentSupplier || 'N/A'}<br/>
+            <strong>Références à contrôler :</strong> ${bookingReferences.length}<br/>
+            <strong>Statut :</strong> <span style="color:#856404;">⚠️ Contrôle en cours — référence réactivée</span>
+          `;
+
+          window.NotificationManager.show(`Référence ${referenceCode} réactivée — cliquez sur "Commencer le contrôle" pour continuer`, 'info', 5000);
+        } else {
+          window.NotificationManager.show(`Référence ${referenceCode} réactivée`, 'success');
+        }
       }
     }
 
