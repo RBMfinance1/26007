@@ -2224,6 +2224,24 @@
   </style>
 </head>
 <body>
+  <!-- Modale sélection collaborateur -->
+  <div id="collaborateurModal" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.5);display:none;align-items:center;justify-content:center;">
+    <div style="background:white;border-radius:15px;padding:30px;max-width:380px;width:90%;box-shadow:0 10px 40px rgba(0,0,0,0.3);text-align:center;">
+      <div style="font-size:2em;margin-bottom:10px;">👤</div>
+      <h3 style="margin:0 0 8px;color:#495057;">Qui êtes-vous ?</h3>
+      <p style="color:#6c757d;font-size:0.9em;margin:0 0 20px;">Sélectionnez votre nom pour suivre votre activité</p>
+      <div id="collaborateurList" style="display:flex;flex-direction:column;gap:10px;margin-bottom:15px;"></div>
+      <div style="border-top:1px solid #e9ecef;padding-top:15px;margin-top:5px;">
+        <input type="text" id="newCollaborateurInput" placeholder="Ajouter un nouveau nom..."
+          style="width:100%;padding:10px;border:2px solid #dee2e6;border-radius:8px;font-size:14px;margin-bottom:8px;"
+          onkeydown="if(event.key==='Enter') addCollaborateur();" />
+        <button onclick="addCollaborateur()" style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;border:none;padding:9px 20px;border-radius:8px;font-weight:bold;cursor:pointer;width:100%;">
+          ➕ Ajouter et sélectionner
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Zone de connexion -->
   <div id="loginModal" class="login-modal">
     <div class="login-card">
@@ -2250,6 +2268,12 @@
           <span class="btn-icon">🔧</span>
           <span class="btn-text">Administration</span>
         </button>
+        <!-- Indicateur collaborateur + sync -->
+        <div id="syncStatusBadge" style="display:none;align-items:center;gap:6px;background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;" onclick="showCollaborateurModal()" title="Changer de collaborateur">
+          <span id="syncCollabName" style="font-weight:bold;color:#495057;">—</span>
+          <span id="syncDot" style="width:10px;height:10px;border-radius:50%;background:#6c757d;display:inline-block;" title="Statut sync"></span>
+          <span id="syncLabel" style="color:#6c757d;">—</span>
+        </div>
         <button onclick="logout()" id="logoutBtn" class="logout-btn">
           <span class="btn-icon">🚪</span>
           <span class="btn-text">Déconnexion</span>
@@ -3838,6 +3862,7 @@
       
       // Sauvegarder dans le stockage local
       window.StorageManager.save('ignoredReferences', Array.from(ignoredReferences));
+      _triggerSync();
       
       // Passer à la prochaine référence non traitée
       moveToNextUntreatedReference();
@@ -5022,6 +5047,7 @@
       if (currentRef) {
         completedReferences.add(currentRef.reference);
         window.NotificationManager.show(`Référence ${currentRef.reference} terminée avec succès!`, 'success');
+        _triggerSync();
       }
       
       // Réinitialiser l'état du contrôle en cours
@@ -6832,6 +6858,29 @@
       }
     }
 
+    function checkPassword() {
+      const enteredPassword = document.getElementById('passwordInput').value;
+      const errorDiv = document.getElementById('loginError');
+
+      if (enteredPassword === MASTER_PASSWORD) {
+        sessionStorage.setItem('authenticated', 'true');
+        document.getElementById('loginModal').style.display = 'none';
+        document.getElementById('logoutBtn').style.display = 'inline-block';
+        errorDiv.textContent = '';
+        
+        // Démarrer le chargement automatique
+        startAutoLoading();
+
+        // Afficher la modale collaborateur si pas encore sélectionné
+        setTimeout(() => {
+          if (!currentCollaborateur) showCollaborateurModal();
+        }, 800);
+      } else {
+        errorDiv.textContent = '❌ Mot de passe incorrect';
+        document.getElementById('passwordInput').value = '';
+      }
+    }
+
     function logout() {
       sessionStorage.removeItem('authenticated');
       location.reload();
@@ -6844,8 +6893,224 @@
       } else {
         document.getElementById('loginModal').style.display = 'none';
         document.getElementById('logoutBtn').style.display = 'inline-block';
+        // Si déjà authentifié (rechargement), afficher modale collaborateur si nécessaire
+        setTimeout(() => {
+          if (!currentCollaborateur) showCollaborateurModal();
+        }, 1200);
       }
     });
+  </script>
+
+  <script>
+  // ================================================================================================
+  // 👤 COLLABORATEURS + 🔄 SYNCHRONISATION GOOGLE SHEETS
+  // ================================================================================================
+
+  const SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxUPm68vIAuKsdXLozxjKtsveDzvCJv_RQzjTES9dTtC_a6dYwZwiRQ_SfyhTM46ei4/exec';
+  const COLLAB_STORAGE_KEY = 'qc_collaborateurs';
+  const CURRENT_COLLAB_KEY = 'qc_currentCollaborateur';
+
+  let currentCollaborateur = localStorage.getItem(CURRENT_COLLAB_KEY) || null;
+  let syncPending = false;
+  let syncInterval = null;
+
+  // ── Collaborateurs ───────────────────────────────────────────────────────────
+
+  function getCollaborateurs() {
+    try {
+      const data = localStorage.getItem(COLLAB_STORAGE_KEY);
+      return data ? JSON.parse(data) : [];
+    } catch(e) { return []; }
+  }
+
+  function saveCollaborateurs(list) {
+    localStorage.setItem(COLLAB_STORAGE_KEY, JSON.stringify(list));
+  }
+
+  function showCollaborateurModal() {
+    const modal  = document.getElementById('collaborateurModal');
+    const listEl = document.getElementById('collaborateurList');
+    const collabs = getCollaborateurs();
+
+    if (collabs.length === 0) {
+      listEl.innerHTML = '<p style="color:#6c757d;font-size:0.85em;margin:0;">Aucun collaborateur enregistré — ajoutez votre nom ci-dessous.</p>';
+    } else {
+      listEl.innerHTML = collabs.map(name => `
+        <button onclick="selectCollaborateur('${name.replace(/'/g,"\\'")}')"
+          style="background:${name === currentCollaborateur ? 'linear-gradient(135deg,#667eea,#764ba2)' : '#f8f9fa'};
+                 color:${name === currentCollaborateur ? 'white' : '#495057'};
+                 border:2px solid ${name === currentCollaborateur ? '#667eea' : '#dee2e6'};
+                 padding:12px 16px;border-radius:8px;font-weight:bold;cursor:pointer;
+                 display:flex;justify-content:space-between;align-items:center;width:100%;">
+          <span>👤 ${name}</span>
+          ${name === currentCollaborateur ? '<span style="font-size:1.1em;">✓</span>' : ''}
+        </button>
+      `).join('');
+    }
+
+    document.getElementById('newCollaborateurInput').value = '';
+    modal.style.display = 'flex';
+  }
+
+  function addCollaborateur() {
+    const input = document.getElementById('newCollaborateurInput');
+    const name  = input.value.trim();
+    if (!name) { input.focus(); return; }
+    const collabs = getCollaborateurs();
+    if (!collabs.includes(name)) {
+      collabs.push(name);
+      saveCollaborateurs(collabs);
+    }
+    selectCollaborateur(name);
+  }
+
+  function selectCollaborateur(name) {
+    currentCollaborateur = name;
+    localStorage.setItem(CURRENT_COLLAB_KEY, name);
+    document.getElementById('collaborateurModal').style.display = 'none';
+    updateSyncBadge();
+    window.NotificationManager.show(`👤 Connecté : ${name}`, 'success', 3000);
+    syncToSheets();
+  }
+
+  // ── Badge de statut dans le header ───────────────────────────────────────────
+
+  function updateSyncBadge() {
+    const badge  = document.getElementById('syncStatusBadge');
+    const nameEl = document.getElementById('syncCollabName');
+    if (!badge) return;
+    if (!currentCollaborateur) { badge.style.display = 'none'; return; }
+    badge.style.display = 'flex';
+    nameEl.textContent  = currentCollaborateur;
+    setSyncStatus(navigator.onLine ? 'pending' : 'offline');
+  }
+
+  function setSyncStatus(status) {
+    const dot   = document.getElementById('syncDot');
+    const label = document.getElementById('syncLabel');
+    if (!dot) return;
+    const map = {
+      syncing : { color: '#ffc107', text: '⏳ Sync...'      },
+      ok      : { color: '#28a745', text: '✅ Synchronisé'  },
+      pending : { color: '#ffc107', text: '🕐 En attente'   },
+      offline : { color: '#6c757d', text: '📵 Hors ligne'   },
+      error   : { color: '#dc3545', text: '❌ Erreur sync'  },
+    };
+    const s = map[status] || map.pending;
+    dot.style.background = s.color;
+    label.textContent    = s.text;
+  }
+
+  // ── Construction du payload ───────────────────────────────────────────────────
+
+  function buildSyncPayload() {
+    const ua = navigator.userAgent;
+    const appareil = /iPad/.test(ua) || (/Android/.test(ua) && !/Mobile/.test(ua))
+      ? 'Tablette' : (/iPhone|Android/.test(ua) ? 'Mobile' : 'Desktop');
+
+    const refs = [];
+    if (typeof bookingReferences !== 'undefined' && bookingReferences.length > 0) {
+      bookingReferences.forEach(ref => {
+        const isCompleted = completedReferences.has(ref.reference);
+        const isIgnored   = ignoredReferences.has(ref.reference);
+        const qr          = (typeof bookingQualityResults !== 'undefined' && bookingQualityResults[ref.reference]) || {};
+
+        const fmtCriteria = (obj) => {
+          if (!obj || !Object.keys(obj).length) return '—';
+          return Object.values(obj).map(v =>
+            v.status === 'ok' ? '✅' : v.status === 'not_ok' ? '❌' : '➖'
+          ).join(' ');
+        };
+
+        refs.push({
+          reference      : ref.reference,
+          statut         : isCompleted ? '✅ Contrôlé' : isIgnored ? '⏭️ Ignoré' : '🔄 En cours',
+          carton         : qr.cartonNumber || '—',
+          controleCarton : fmtCriteria(qr.packageQuality),
+          controleProduit: fmtCriteria(qr.productQuality),
+          eanTotal       : qr.eanControl ? qr.eanControl.total            : 0,
+          eanVerifies    : qr.eanControl ? (qr.eanControl.checked  || []).length : 0,
+          eanNonTestes   : qr.eanControl ? (qr.eanControl.nonTested|| []).length : 0,
+        });
+      });
+    }
+
+    const total       = (typeof bookingReferences !== 'undefined') ? bookingReferences.length : 0;
+    const nbCompleted = (typeof completedReferences !== 'undefined') ? completedReferences.size : 0;
+    const nbIgnored   = (typeof bookingReferences !== 'undefined' && typeof ignoredReferences !== 'undefined')
+      ? bookingReferences.filter(r => ignoredReferences.has(r.reference)).length : 0;
+    const traites     = nbCompleted + nbIgnored;
+    const progression = total > 0 ? Math.round((traites / total) * 100) : 0;
+
+    return {
+      collaborateur  : currentCollaborateur,
+      appareil,
+      timestamp      : new Date().toISOString(),
+      booking        : (typeof currentBooking !== 'undefined' && currentBooking) ? currentBooking.number : null,
+      fournisseur    : (typeof currentSupplier !== 'undefined') ? currentSupplier : null,
+      refsTotal      : total,
+      refsControlees : nbCompleted,
+      refsIgnorees   : nbIgnored,
+      progression,
+      statutBooking  : total > 0 && traites === total ? 'Terminé' : 'En cours',
+      resultats      : refs,
+    };
+  }
+
+  // ── Envoi vers Google Sheets ──────────────────────────────────────────────────
+
+  async function syncToSheets() {
+    if (!currentCollaborateur) return;
+    if (typeof TEST_MODE !== 'undefined' && TEST_MODE) {
+      setSyncStatus('ok'); return;
+    }
+
+    if (!navigator.onLine) { setSyncStatus('offline'); syncPending = true; return; }
+
+    setSyncStatus('syncing');
+    try {
+      await fetch(SHEETS_URL, {
+        method : 'POST',
+        mode   : 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify(buildSyncPayload()),
+      });
+      setSyncStatus('ok');
+      syncPending = false;
+    } catch(e) {
+      console.warn('Sync échouée:', e.message);
+      setSyncStatus('error');
+      syncPending = true;
+    }
+  }
+
+  // Debounce : déclenche une sync 4s après la dernière action
+  function _triggerSync() {
+    if (!currentCollaborateur) return;
+    setSyncStatus('pending');
+    clearTimeout(window._syncDebounce);
+    window._syncDebounce = setTimeout(syncToSheets, 4000);
+  }
+
+  // ── Démarrage du moteur ───────────────────────────────────────────────────────
+
+  // Sync automatique toutes les 2 minutes
+  syncInterval = setInterval(syncToSheets, 2 * 60 * 1000);
+
+  // Retour de connexion
+  window.addEventListener('online',  () => { setSyncStatus('pending'); setTimeout(syncToSheets, 1500); });
+  window.addEventListener('offline', () => { setSyncStatus('offline'); syncPending = true; });
+
+  // Sync au départ de page (best-effort)
+  window.addEventListener('beforeunload', () => {
+    if (currentCollaborateur && !(typeof TEST_MODE !== 'undefined' && TEST_MODE)) {
+      try { navigator.sendBeacon(SHEETS_URL, JSON.stringify(buildSyncPayload())); } catch(e) {}
+    }
+  });
+
+  // Initialiser le badge si collaborateur déjà en mémoire
+  if (currentCollaborateur) updateSyncBadge();
+
   </script>
 </body>
 </html>
