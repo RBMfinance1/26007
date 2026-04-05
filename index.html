@@ -477,29 +477,54 @@
       overlay._closeHandler = closeHandler;
 
     } else {
-      // ── Mode tablette/desktop : injection dans la page ────────────────────────
+      // ── Mode tablette/desktop : html5-qrcode reste dans son div, on superpose le cadre ──
       if (!tabletContainer) return;
+
+      // Déplacer le div html5-qrcode (pas la vidéo) dans le conteneur visible
       tabletContainer.innerHTML = '';
-      tabletContainer.style.display = 'block';
+      tabletContainer.style.cssText = 'display:block; position:relative; width:100%; max-width:600px; margin:12px auto; border-radius:16px; overflow:hidden; background:#000; aspect-ratio:4/3;';
 
-      const box = document.createElement('div');
-      box.className = 'scanner-tablet-box';
+      // h5div doit être DANS tabletContainer pour que la vidéo soit visible
+      h5div.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+      tabletContainer.appendChild(h5div);
 
-      if (realVideo) {
-        realVideo.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
-        box.style.position = 'relative';
-        box.appendChild(realVideo);
+      // Forcer la vidéo html5-qrcode à remplir le conteneur via CSS injecté
+      const styleId = '_h5qr_tablet_style';
+      if (!document.getElementById(styleId)) {
+        const s = document.createElement('style');
+        s.id = styleId;
+        s.textContent = `
+          #_h5qr_1, #_h5qr_2 {
+            display: block !important;
+            width: 100% !important;
+            height: 100% !important;
+          }
+          #_h5qr_1 video, #_h5qr_2 video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
+            border-radius: 16px;
+          }
+          #_h5qr_1 img, #_h5qr_2 img { display:none !important; }
+          #_h5qr_1 #qr-shaded-region, #_h5qr_2 #qr-shaded-region { display:none !important; }
+        `;
+        document.head.appendChild(s);
       }
 
-      // Aim + laser
-      box.innerHTML += `
-        <div class="scan-aim" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:240px;height:160px;">
-          <div class="scan-aim-br"></div>
+      // Superposer le cadre de visée et la ligne laser par-dessus
+      const overlay2 = document.createElement('div');
+      overlay2.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:10;';
+      overlay2.innerHTML = `
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:260px;height:170px;border:2px solid rgba(255,255,255,0.25);border-radius:12px;overflow:hidden;">
+          <div style="position:absolute;top:0;left:0;width:28px;height:28px;border-top:4px solid #00ff88;border-left:4px solid #00ff88;border-radius:8px 0 0 0;"></div>
+          <div style="position:absolute;top:0;right:0;width:28px;height:28px;border-top:4px solid #00ff88;border-right:4px solid #00ff88;border-radius:0 8px 0 0;"></div>
+          <div style="position:absolute;bottom:0;left:0;width:28px;height:28px;border-bottom:4px solid #00ff88;border-left:4px solid #00ff88;border-radius:0 0 0 8px;"></div>
+          <div style="position:absolute;bottom:0;right:0;width:28px;height:28px;border-bottom:4px solid #00ff88;border-right:4px solid #00ff88;border-radius:0 0 8px 0;"></div>
           <div class="scan-laser"></div>
         </div>
-        <div class="scan-hint" style="position:absolute;bottom:12px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.8);font-size:13px;">Placez le code dans le cadre</div>
+        <div style="position:absolute;bottom:12px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,0.85);font-size:13px;white-space:nowrap;text-shadow:0 1px 4px rgba(0,0,0,0.8);">Placez le code dans le cadre</div>
       `;
-      tabletContainer.appendChild(box);
+      tabletContainer.appendChild(overlay2);
     }
   }
 
@@ -551,7 +576,10 @@
     document.getElementById('scanButton').style.display = 'inline-block';
     document.getElementById('stopButton').style.display = 'none';
     const sc = document.getElementById('scannerContainer');
-    if (sc) { sc.style.display = 'none'; sc.innerHTML = ''; }
+    if (sc) { sc.style.cssText = 'display:none;'; sc.innerHTML = ''; }
+    // Remettre h5div dans le body s'il était dans scannerContainer
+    const h5 = document.getElementById('_h5qr_1');
+    if (h5 && h5.parentElement !== document.body) { h5.style.display = 'none'; document.body.appendChild(h5); }
   }
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -600,7 +628,10 @@
     document.getElementById('eanScanButton').style.display = 'inline-block';
     document.getElementById('eanStopButton').style.display = 'none';
     const sc = document.getElementById('eanScannerContainer');
-    if (sc) { sc.style.display = 'none'; sc.innerHTML = ''; }
+    if (sc) { sc.style.cssText = 'display:none;'; sc.innerHTML = ''; }
+    // Remettre h5div dans le body s'il était dans eanScannerContainer
+    const h5 = document.getElementById('_h5qr_2');
+    if (h5 && h5.parentElement !== document.body) { h5.style.display = 'none'; document.body.appendChild(h5); }
   }
   </script>
   
