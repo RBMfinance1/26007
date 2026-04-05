@@ -4618,11 +4618,6 @@
       const currentRef = bookingReferences[currentReferenceIndex];
       if (currentRef) {
         completedReferences.add(currentRef.reference);
-        
-        // Mettre à jour immédiatement l'affichage
-        updateBookingProgress();
-        displayBookingReferences();
-        
         window.NotificationManager.show(`Référence ${currentRef.reference} terminée avec succès!`, 'success');
       }
       
@@ -4636,27 +4631,25 @@
       displayBookingReferences();
       updateBookingProgress();
       
-      // Vérifier si le booking est maintenant complet
-      checkBookingCompletion();
-      
-      // Si le booking n'est pas complet, retourner à l'étape de scan
-      if (currentReferenceIndex < bookingReferences.length) {
-        // Masquer les boutons PDF car on continue avec d'autres références
+      // Y a-t-il encore une référence non traitée ?
+      const hasNextRef = currentReferenceIndex < bookingReferences.length;
+
+      if (hasNextRef) {
+        // Il reste des références → aller au scan
         document.getElementById("pdfButtonsSection").style.display = "none";
-        
-        // Retourner à l'étape de scan
         document.getElementById("step7").classList.remove("active");
         document.getElementById("step7").classList.add("hidden");
         document.getElementById("step6").classList.remove("active");
         document.getElementById("step6").classList.add("hidden");
         document.getElementById("step5").classList.remove("active");
         document.getElementById("step5").classList.add("hidden");
-        
         document.getElementById("step4").classList.remove("completed");
+        document.getElementById("step4").classList.remove("hidden");
         document.getElementById("step4").classList.add("active");
-        
-        // Scroll vers la section de scan
         document.getElementById("step4").scrollIntoView({ behavior: 'smooth' });
+      } else {
+        // Plus aucune référence non traitée → booking terminé
+        checkBookingCompletion();
       }
     }
 
@@ -4733,21 +4726,28 @@
       // Réinitialiser les contrôles
       resetCurrentControlState();
       
-      // Passer à la référence suivante
+      // Avancer à la prochaine référence non traitée
       currentReferenceIndex++;
-      
+      // Sauter les références déjà traitées (terminées ou ignorées)
+      while (
+        currentReferenceIndex < bookingReferences.length &&
+        (completedReferences.has(bookingReferences[currentReferenceIndex].reference) ||
+         ignoredReferences.has(bookingReferences[currentReferenceIndex].reference))
+      ) {
+        currentReferenceIndex++;
+      }
+
       // Toujours mettre à jour l'affichage de la progression
       updateBookingProgress();
       displayBookingReferences();
       
       if (currentReferenceIndex >= bookingReferences.length) {
         // Toutes les références ont été traitées
-        showBookingComplete();
+        checkBookingCompletion();
       } else {
         // Mettre à jour les informations et retourner au scan
         updateCurrentControlInfo();
         
-        // Retourner à l'étape de scan
         document.getElementById("step7").classList.remove("active");
         document.getElementById("step7").classList.add("hidden");
         document.getElementById("step6").classList.remove("active");
@@ -4756,9 +4756,9 @@
         document.getElementById("step5").classList.add("hidden");
         
         document.getElementById("step4").classList.remove("completed");
+        document.getElementById("step4").classList.remove("hidden");
         document.getElementById("step4").classList.add("active");
         
-        // Scroll vers la section de scan
         document.getElementById("step4").scrollIntoView({ behavior: 'smooth' });
         
         window.NotificationManager.show("Passage à la référence suivante!", 'info');
@@ -4793,21 +4793,66 @@
     }
 
     function showBookingComplete() {
-      // Mettre à jour une dernière fois la progression
+      // Masquer toutes les étapes intermédiaires
+      document.getElementById("step7").classList.remove("active");
+      document.getElementById("step7").classList.add("hidden");
+      document.getElementById("step6").classList.remove("active");
+      document.getElementById("step6").classList.add("hidden");
+      document.getElementById("step5").classList.remove("active");
+      document.getElementById("step5").classList.add("hidden");
+      document.getElementById("step4").classList.remove("active");
+      document.getElementById("step4").classList.add("hidden");
+
+      // Revenir à l'étape 3 (récap booking)
+      document.getElementById("step3").classList.remove("hidden");
+      document.getElementById("step3").classList.add("active");
+
+      // Mettre à jour la progression une dernière fois
       updateBookingProgress();
-      
-      // Afficher les boutons PDF dans la section de contrôle EAN
-      document.getElementById("pdfButtonsSection").style.display = "block";
-      
-      // Masquer les boutons d'action du booking dans l'étape 3
+      displayBookingReferences();
+
+      const totalReferences = bookingReferences.length;
+      const completedCount = completedReferences.size;
+      const ignoredCount = bookingReferences.filter(ref => ignoredReferences.has(ref.reference)).length;
+      const hasIgnored = ignoredCount > 0;
+
+      // Construire le récap dans currentBookingInfo
+      const statusColor = hasIgnored ? '#856404' : '#155724';
+      const statusBg = hasIgnored ? 'linear-gradient(135deg,#fff3cd,#ffeaa7)' : 'linear-gradient(135deg,#d4edda,#c3e6cb)';
+      const statusBorder = hasIgnored ? '#ffc107' : '#28a745';
+      const statusIcon = hasIgnored ? '⚠️' : '🎉';
+      const statusTitle = hasIgnored
+        ? `Booking ${currentBooking.number} terminé avec réserves`
+        : `Booking ${currentBooking.number} entièrement contrôlé !`;
+
+      document.getElementById("currentBookingInfo").innerHTML = `
+        <div style="background:${statusBg};border:2px solid ${statusBorder};border-radius:10px;padding:15px;text-align:left;">
+          <h4 style="color:${statusColor};margin:0 0 10px 0;">${statusIcon} ${statusTitle}</h4>
+          <strong>Références contrôlées :</strong> ${completedCount} / ${totalReferences} ✅<br/>
+          ${hasIgnored ? `<strong>Références ignorées :</strong> ${ignoredCount} / ${totalReferences} ⏭️<br/>` : ''}
+          ${hasIgnored ? `<div style="margin-top:10px;padding:8px 12px;background:rgba(255,193,7,0.2);border-radius:6px;font-size:0.9em;color:#856404;">
+            ⚠️ ${ignoredCount} référence${ignoredCount > 1 ? 's ont été ignorées' : ' a été ignorée'}. Ces références n'apparaîtront pas dans les rapports de contrôle qualité.
+          </div>` : ''}
+        </div>
+      `;
+
+      // Afficher les boutons de rapport
       document.getElementById("bookingActionButtons").style.display = "none";
-      document.getElementById("reportButtons").style.display = "none";
-      
-      // Mettre à jour les informations finales
-      updateFinalBookingInfo();
-      
-      // Scroll vers les boutons PDF
-      document.getElementById("pdfButtonsSection").scrollIntoView({ behavior: 'smooth' });
+      document.getElementById("reportButtons").style.display = "flex";
+      document.getElementById("pdfButtonsSection").style.display = "none";
+
+      // Alerte si des références ont été ignorées
+      if (hasIgnored) {
+        window.NotificationManager.show(
+          `⚠️ Booking terminé — ${ignoredCount} référence${ignoredCount > 1 ? 's ignorées' : ' ignorée'}. Rapports disponibles.`,
+          'warning',
+          6000
+        );
+      } else {
+        window.NotificationManager.show('🎉 Booking entièrement contrôlé ! Vous pouvez générer les rapports.', 'success', 5000);
+      }
+
+      document.getElementById("step3").scrollIntoView({ behavior: 'smooth' });
     }
 
     function updateFinalBookingInfo() {
