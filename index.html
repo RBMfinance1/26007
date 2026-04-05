@@ -2417,24 +2417,86 @@
 
     // Fonction pour vérifier le mot de passe admin
     function checkAdminPassword() {
-      const password = prompt("🔐 Mot de passe administrateur :");
+      // Créer la modale si elle n'existe pas encore
+      if (!document.getElementById('adminPasswordModal')) {
+        const modal = document.createElement('div');
+        modal.id = 'adminPasswordModal';
+        modal.style.cssText = `
+          position: fixed; inset: 0; z-index: 99998;
+          background: rgba(0,0,0,0.5);
+          display: flex; align-items: center; justify-content: center;
+        `;
+        modal.innerHTML = `
+          <div style="background:white;border-radius:15px;padding:30px;max-width:360px;width:90%;
+                      box-shadow:0 10px 40px rgba(0,0,0,0.3);text-align:center;">
+            <div style="font-size:2em;margin-bottom:10px;">🔐</div>
+            <h3 style="margin:0 0 20px;color:#495057;">Mot de passe administrateur</h3>
+            <input type="password" id="adminPasswordInput"
+              placeholder="••••••"
+              style="width:100%;padding:12px;border:2px solid #dee2e6;border-radius:8px;
+                     font-size:18px;text-align:center;letter-spacing:4px;outline:none;
+                     transition:border-color 0.2s;"
+              onkeydown="if(event.key==='Enter') _confirmAdminPassword();"
+              oninput="document.getElementById('adminPasswordError').textContent='';"
+              onfocus="this.style.borderColor='#667eea';"
+              onblur="this.style.borderColor='#dee2e6';"
+            />
+            <div id="adminPasswordError"
+              style="color:#dc3545;font-size:0.85em;min-height:20px;margin:8px 0;"></div>
+            <div style="display:flex;gap:10px;justify-content:center;margin-top:5px;">
+              <button onclick="_confirmAdminPassword()"
+                style="background:linear-gradient(135deg,#667eea,#764ba2);color:white;
+                       border:none;padding:10px 24px;border-radius:8px;font-weight:bold;
+                       font-size:14px;cursor:pointer;flex:1;">
+                ✅ Valider
+              </button>
+              <button onclick="_closeAdminModal()"
+                style="background:#6c757d;color:white;border:none;padding:10px 24px;
+                       border-radius:8px;font-weight:bold;font-size:14px;cursor:pointer;flex:1;">
+                ✖ Annuler
+              </button>
+            </div>
+          </div>
+        `;
+        document.body.appendChild(modal);
+        // Fermer en cliquant sur le fond
+        modal.addEventListener('click', e => { if (e.target === modal) _closeAdminModal(); });
+      }
+
+      // Afficher la modale et focus sur le champ
+      const modal = document.getElementById('adminPasswordModal');
+      const input = document.getElementById('adminPasswordInput');
+      input.value = '';
+      document.getElementById('adminPasswordError').textContent = '';
+      modal.style.display = 'flex';
+      setTimeout(() => input.focus(), 100);
+    }
+
+    function _confirmAdminPassword() {
+      const input = document.getElementById('adminPasswordInput');
+      const password = input.value;
       if (password === ADMIN_PASSWORD) {
+        _closeAdminModal();
         // Activer automatiquement le toggle pour afficher le bloc de chargement
         const step1 = document.getElementById('step1');
         const toggleBtn = document.getElementById('toggleStep1Btn');
         const toggleIcon = toggleBtn.querySelector('.toggle-icon');
-        
-        // S'assurer que le bloc est visible
         step1.classList.remove('collapsed');
         step1.classList.add('expanded');
         toggleBtn.classList.remove('collapsed');
         toggleIcon.textContent = '⚙️';
-        
         showAdminPanel();
         window.NotificationManager.show("Accès administrateur autorisé", 'success');
-      } else if (password !== null) {
-        window.NotificationManager.show("Mot de passe incorrect", 'error');
+      } else {
+        document.getElementById('adminPasswordError').textContent = '❌ Mot de passe incorrect';
+        input.value = '';
+        input.focus();
       }
+    }
+
+    function _closeAdminModal() {
+      const modal = document.getElementById('adminPasswordModal');
+      if (modal) modal.style.display = 'none';
     }
 
     // Fonction pour annuler le chargement automatique
@@ -3617,8 +3679,17 @@
         // Passer à l'étape 3
         document.getElementById('step2').classList.remove('active');
         document.getElementById('step2').classList.add('completed');
-        document.getElementById('step3').classList.remove('hidden');
+        document.getElementById('step3').classList.remove('hidden','completed');
         document.getElementById('step3').classList.add('active');
+
+        // Toujours restaurer les boutons d'action et masquer les boutons rapport
+        document.getElementById("bookingActionButtons").style.display = "flex";
+        document.getElementById("reportButtons").style.display = "none";
+        document.getElementById("pdfButtonsSection").style.display = "none";
+
+        // Masquer le bouton intermédiaire fournisseur s'il existe
+        const nextBtn = document.getElementById('nextSupplierBtn');
+        if (nextBtn) nextBtn.style.display = 'none';
         
         // Mettre à jour les informations
         document.getElementById("currentBookingInfo").innerHTML = `
