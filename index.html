@@ -4727,7 +4727,10 @@
         if (allReferencesProcessed) {
           // Marquer le booking comme complètement traité
           completedBookings.add(currentBooking.number);
-          window.StorageManager.save('completedBookings', Array.from(completedBookings));
+          // Ne pas sauvegarder dans le localStorage en mode test (pour ne pas polluer les vrais données)
+          if (!TEST_MODE) {
+            window.StorageManager.save('completedBookings', Array.from(completedBookings));
+          }
           
           // Afficher automatiquement la section des rapports
           showBookingComplete();
@@ -6235,6 +6238,10 @@
       bddLoaded = true;
       bookingLoaded = true;
 
+      // Isoler le mode test : sauvegarder les vrais completedBookings et repartir de zéro
+      window._realCompletedBookings = new Set(completedBookings);
+      completedBookings = new Set();
+
       extractBookings();
 
       // Afficher la bannière test
@@ -6271,6 +6278,13 @@
 
     function deactivateTestMode() {
       TEST_MODE = false;
+
+      // Restaurer les vrais completedBookings (non pollués par le test)
+      if (window._realCompletedBookings) {
+        completedBookings = window._realCompletedBookings;
+        window._realCompletedBookings = null;
+      }
+
       const banner = document.getElementById('testModeBanner');
       if (banner) banner.remove();
       document.body.style.paddingTop = '';
