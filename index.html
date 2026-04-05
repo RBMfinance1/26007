@@ -4080,6 +4080,25 @@
           warranty_seal: { status: 'ok', comment: '[MODE TEST]', photos: [] }
         };
       }
+
+      // En mode test, auto-sélectionner un produit si aucun n'est choisi
+      if (TEST_MODE && !currentProduct) {
+        const currentRef = bookingReferences[currentReferenceIndex];
+        if (currentRef && currentRef.items.length > 0) {
+          currentProduct = currentRef.items[0];
+        } else if (database.length > 0) {
+          currentProduct = database[0];
+        }
+        if (currentProduct) {
+          window.NotificationManager.show('🧪 [MODE TEST] Produit auto-sélectionné pour le contrôle', 'info');
+        }
+      }
+
+      // Guard : sans produit, impossible de continuer
+      if (!currentProduct) {
+        window.NotificationManager.show("Veuillez d'abord sélectionner un produit (étape scan)", 'warning');
+        return;
+      }
       
       updatePackageQualityStatus();
       
@@ -6021,19 +6040,44 @@
 
     function startNewBooking() {
       if (confirm("🆕 Commencer un nouveau booking ?\n\nToutes les données actuelles seront perdues.")) {
-        // Réinitialiser complètement l'application
+        // Réinitialiser complètement les données
         resetApplication();
-        
-        // Retourner à l'étape de sélection de booking
-        document.getElementById("step8").classList.remove("active");
-        document.getElementById("step8").classList.add("hidden");
-        document.getElementById("step2").classList.remove("completed");
-        document.getElementById("step2").classList.add("active");
-        
+
+        // Masquer toutes les étapes intermédiaires et les remettre à zéro
+        ['step3','step4','step5','step6','step7','step8'].forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+            el.classList.add('hidden');
+            el.classList.remove('active', 'completed');
+          }
+        });
+
+        // Réinitialiser step2 et step3 proprement
+        const step2 = document.getElementById('step2');
+        step2.classList.remove('hidden', 'completed');
+        step2.classList.add('active');
+
+        // Remettre le conteneur de sélection de booking en vue
+        document.getElementById('bookingSelectionContainer').classList.remove('hidden');
+        document.getElementById('supplierSelectionContainer').classList.add('hidden');
+        document.getElementById('bookingSearchInput').value = '';
+
+        // Réinitialiser les boutons de step3 pour le prochain booking
+        const actionBtns = document.getElementById('bookingActionButtons');
+        const reportBtns = document.getElementById('reportButtons');
+        const pdfBtns = document.getElementById('pdfButtonsSection');
+        if (actionBtns) actionBtns.style.display = 'flex';
+        if (reportBtns) reportBtns.style.display = 'none';
+        if (pdfBtns) pdfBtns.style.display = 'none';
+
+        // Supprimer le bloc de fin de booking s'il existe
+        const completionSection = document.getElementById('bookingCompletionOptions');
+        if (completionSection) completionSection.remove();
+
         // Scroll vers la sélection de booking
-        document.getElementById("step2").scrollIntoView({ behavior: 'smooth' });
-        
-        window.NotificationManager.show("Nouveau booking - sélectionnez un booking", 'success');
+        step2.scrollIntoView({ behavior: 'smooth' });
+
+        window.NotificationManager.show("Nouveau booking — sélectionnez un booking", 'success');
       }
     }
 
