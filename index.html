@@ -3130,24 +3130,11 @@
         return;
       }
       
-      // Vérifier si toutes les références sont traitées
-      const allReferencesProcessed = bookingReferences.every(ref => 
-        completedReferences.has(ref.reference) || ignoredReferences.has(ref.reference)
-      );
-      
-      // Si toutes les références sont traitées, ne pas appeler showBookingComplete ici
-      // car cela créerait une boucle infinie. showBookingComplete sera appelé depuis checkBookingCompletion()
-      if (allReferencesProcessed && bookingReferences.length > 0) {
-        // Marquer le booking comme complet sans appeler showBookingComplete
-        completedBookings.add(currentBooking.number);
-        window.StorageManager.save('completedBookings', Array.from(completedBookings));
-        return;
-      }
-      
+      // Toujours afficher toutes les références, même si le booking est complet
       referencesList.innerHTML = bookingReferences.map((ref, index) => {
         const isCompleted = completedReferences.has(ref.reference);
         const isIgnored = ignoredReferences.has(ref.reference);
-        const isCurrent = index === currentReferenceIndex;
+        const isCurrent = !isCompleted && !isIgnored && (index === currentReferenceIndex);
         
         let statusClass = 'pending';
         let statusText = 'En attente';
@@ -3169,6 +3156,7 @@
           statusIndicator = 'pending';
           actionButton = `<button onclick="ignoreReference('${ref.reference}')" style="background: #ffc107; color: #000; border: none; padding: 5px 10px; border-radius: 3px; font-size: 0.8em; margin-left: 10px;">⏭️ Ignorer</button>`;
         } else {
+          // En attente mais pas encore courante
           actionButton = `<button onclick="ignoreReference('${ref.reference}')" style="background: #ffc107; color: #000; border: none; padding: 5px 10px; border-radius: 3px; font-size: 0.8em; margin-left: 10px;">⏭️ Ignorer</button>`;
         }
         
@@ -3215,12 +3203,7 @@
         
         document.getElementById('bookingProgressText').textContent = 
           `${completed} contrôlées + ${ignored} ignorées = ${processed} / ${total} références traitées`;
-        
-        // Vérifier si le booking est complètement terminé
-        if (processed === total && total > 0) {
-          // Booking terminé, afficher les options d'impression
-          showBookingCompletionOptions();
-        }
+        // Note : la détection de fin de booking est gérée par checkBookingCompletion() uniquement
       }
 
       function showBookingCompletionOptions() {
@@ -3431,7 +3414,7 @@
       // Sauvegarder dans le stockage local
       window.StorageManager.save('ignoredReferences', Array.from(ignoredReferences));
       
-      // Passer à la référence suivante non traitée
+      // Passer à la prochaine référence non traitée
       moveToNextUntreatedReference();
       
       // Mettre à jour l'affichage
@@ -3439,7 +3422,31 @@
       updateBookingProgress();
       
       // Vérifier si le booking est maintenant complet
-      checkBookingCompletion();
+      const allDone = bookingReferences.every(ref =>
+        completedReferences.has(ref.reference) || ignoredReferences.has(ref.reference)
+      );
+
+      if (allDone) {
+        checkBookingCompletion();
+      } else {
+        // Il reste des références → naviguer vers le scan de la prochaine
+        window.NotificationManager.show(`Référence ${referenceCode} ignorée, passage à la suivante`, 'info');
+        updateCurrentControlInfo();
+
+        // Retourner à l'étape de scan
+        document.getElementById("step7").classList.remove("active");
+        document.getElementById("step7").classList.add("hidden");
+        document.getElementById("step6").classList.remove("active");
+        document.getElementById("step6").classList.add("hidden");
+        document.getElementById("step5").classList.remove("active");
+        document.getElementById("step5").classList.add("hidden");
+
+        document.getElementById("step4").classList.remove("completed");
+        document.getElementById("step4").classList.remove("hidden");
+        document.getElementById("step4").classList.add("active");
+
+        document.getElementById("step4").scrollIntoView({ behavior: 'smooth' });
+      }
     }
 
     function reactivateReference(referenceCode) {
@@ -3449,14 +3456,8 @@
         // Sauvegarder dans le stockage local
         window.StorageManager.save('ignoredReferences', Array.from(ignoredReferences));
         
-        // Trouver l'index de la référence réactivée
-        const reactivatedIndex = bookingReferences.findIndex(ref => ref.reference === referenceCode);
-        
-        // Si la référence réactivée est avant la référence courante, on y retourne
-        if (reactivatedIndex < currentReferenceIndex) {
-          currentReferenceIndex = reactivatedIndex;
-        }
-        // Sinon, on reste sur la référence courante
+        // Repositionner sur la première référence non traitée (inclut celle qu'on vient de réactiver)
+        moveToNextUntreatedReference();
         
         // Mettre à jour l'affichage
         displayBookingReferences();
@@ -3618,6 +3619,16 @@
         return;
       }
       
+      // Positionner sur la première référence non traitée
+      moveToNextUntreatedReference();
+
+      // Vérifier qu'il en reste au moins une
+      if (currentReferenceIndex >= bookingReferences.length) {
+        window.NotificationManager.show("Toutes les références de ce booking sont déjà traitées", 'info');
+        checkBookingCompletion();
+        return;
+      }
+      
       // Réinitialiser l'affichage des boutons
       document.getElementById("bookingActionButtons").style.display = "flex";
       document.getElementById("reportButtons").style.display = "none";
@@ -3629,6 +3640,7 @@
       document.getElementById('step4').classList.add('active');
       
       updateCurrentControlInfo();
+      displayBookingReferences();
       
       window.NotificationManager.show("Contrôle du booking commencé!", 'success');
       
