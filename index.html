@@ -2311,6 +2311,22 @@
     <!-- Bloc admin (caché par défaut) -->
     <div id="adminSection" class="admin-panel hidden">
       <h4>🔧 Administration</h4>
+
+      <!-- Sélection du repo GitHub -->
+      <div style="margin-bottom:14px;padding:12px 14px;background:#f0f4ff;border:1px solid #c5d0f0;border-radius:10px;">
+        <div style="font-size:0.82em;color:#3a4a8a;font-weight:600;margin-bottom:8px;">📦 Repo GitHub (source BDD &amp; Booking)</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input id="adminRepoInput" type="text" placeholder="ex: 26007"
+            style="flex:1;padding:9px 12px;border:1.5px solid #b0bde8;border-radius:8px;font-size:1em;font-weight:bold;letter-spacing:1px;"
+            onkeydown="if(event.key==='Enter') applyGithubRepo();" />
+          <button onclick="applyGithubRepo()"
+            style="background:linear-gradient(135deg,#3a7bd5,#1a5bb5);color:white;border:none;padding:9px 14px;border-radius:8px;font-weight:bold;cursor:pointer;white-space:nowrap;">
+            ✅ Appliquer
+          </button>
+        </div>
+        <div style="font-size:0.78em;color:#6c7ab8;margin-top:6px;">Défaut : 26007 — modifiable sans recharger la page</div>
+      </div>
+
       <div class="admin-buttons">
         <button onclick="loadAllOnlineFiles()">🌐 Chargement en ligne</button>
         <button onclick="resetCache()">🗑️ Vider le cache</button>
@@ -2779,6 +2795,31 @@
     let autoLoadingCancelled = false;
     const ADMIN_PASSWORD = "1970";
 
+    // ── Repo GitHub configurable ──────────────────────────────────────────────
+    const DEFAULT_GITHUB_REPO = '26007';
+    let GITHUB_REPO = localStorage.getItem('qc_github_repo') || DEFAULT_GITHUB_REPO;
+
+    function getGithubBase() {
+      return 'https://rbmfinance1.github.io/' + GITHUB_REPO;
+    }
+
+    function saveGithubRepo(repoId) {
+      repoId = repoId.trim();
+      if (!repoId) return;
+      GITHUB_REPO = repoId;
+      localStorage.setItem('qc_github_repo', repoId);
+    }
+
+    function applyGithubRepo() {
+      const input = document.getElementById('adminRepoInput');
+      const val = input ? input.value.trim() : '';
+      if (!val) { window.NotificationManager.show('Veuillez saisir un numéro de repo', 'warning'); return; }
+      saveGithubRepo(val);
+      window.NotificationManager.show('✅ Repo ' + val + ' enregistré — rechargement des données...', 'info', 3000);
+      setTimeout(() => loadAllOnlineFiles(), 1000);
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     // Fonction pour afficher le bloc admin
     function showAdminPanel() {
       const adminSection = document.getElementById('adminSection');
@@ -2792,6 +2833,10 @@
       setTimeout(() => {
         adminSection.classList.add('show');
       }, 10);
+
+      // Initialiser le champ repo avec la valeur courante
+      const repoInput = document.getElementById('adminRepoInput');
+      if (repoInput) repoInput.value = GITHUB_REPO;
     }
 
     // Fonction pour masquer le bloc admin
@@ -3197,7 +3242,7 @@
         document.querySelector('.loading-indicator').innerHTML = '<span class="loading-spinner"></span>Chargement de la base de données en ligne...';
         
         const alternativeUrls = [
-          'https://rbmfinance1.github.io/26004/bdd.csv'
+          getGithubBase() + '/bdd.csv'
         ];
         
         async function tryUrls(urlIndex = 0) {
@@ -3294,7 +3339,7 @@
         document.querySelector('.loading-indicator').innerHTML = '<span class="loading-spinner"></span>Chargement du fichier booking en ligne...';
         
         const alternativeUrls = [
-          'https://rbmfinance1.github.io/26004/booking.csv'
+          getGithubBase() + '/booking.csv'
         ];
         
         async function tryBookingUrls(urlIndex = 0) {
@@ -3464,11 +3509,11 @@
   if (fileType === 'bdd') {
     // 📊 Configuration pour le fichier BDD (CSV)
     fileName = 'bdd.csv';
-    fileUrl = 'https://rbmfinance1.github.io/26004/bdd.csv';
+    fileUrl = getGithubBase() + '/bdd.csv';
   } else {
     // 📋 Configuration pour le fichier BOOKING (CSV)
     fileName = 'booking.csv';
-    fileUrl = 'https://rbmfinance1.github.io/26004/booking.csv';
+    fileUrl = getGithubBase() + '/booking.csv';
   }
   
   // ================================================================================================
