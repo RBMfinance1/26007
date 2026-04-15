@@ -2416,7 +2416,6 @@
       
       <!-- Boutons de rapports (affichés automatiquement quand le booking est complet) -->
       <div class="button-row" id="reportButtons" style="display: none;">
-        <button onclick="generateIndividualReports()" style="background: #17a2b8;">📄 Rapports PDF individuels</button>
         <button onclick="generateGlobalBookingReport()" style="background: #dc3545;">📊 Rapport PDF global du booking</button>
         <button onclick="startNewBooking()" style="background: #28a745;">🆕 Nouveau booking</button>
       </div>
@@ -2726,7 +2725,6 @@
       <div id="pdfButtonsSection" style="display: none; margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 2px solid #28a745;">
         <h4 style="margin: 0 0 15px 0; color: #28a745;">📊 Génération des rapports PDF</h4>
         <div class="button-row">
-          <button onclick="generateIndividualReports()" style="background: #17a2b8;">📄 Rapports PDF individuels</button>
           <button onclick="generateGlobalBookingReport()" style="background: #dc3545;">📊 Rapport PDF global du booking</button>
           <button onclick="startNewBooking()" style="background: #28a745;">🆕 Nouveau booking</button>
         </div>
@@ -2741,7 +2739,6 @@
       </div>
 
       <div class="button-row">
-        <button onclick="generateIndividualReports()" style="background: #17a2b8;">📄 Rapports PDF individuels</button>
         <button onclick="generateGlobalBookingReport()" style="background: #dc3545;">📊 Rapport PDF global du booking</button>
         <button onclick="startNewBooking()" style="background: #28a745;">🆕 Nouveau booking</button>
       </div>
@@ -3737,9 +3734,6 @@
           <h4 style="color: #155724; margin-bottom: 15px;">🎉 Booking ${currentBooking.number} terminé !</h4>
           <p style="color: #155724; margin-bottom: 20px;">Toutes les références ont été traitées. Vous pouvez maintenant générer les rapports PDF.</p>
           <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
-            <button onclick="generateIndividualReports()" style="background: #17a2b8; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: all 0.3s ease;">
-              📄 Rapports PDF individuels
-            </button>
             <button onclick="generateGlobalReport()" style="background: #28a745; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: all 0.3s ease;">
               📊 Rapport PDF global
             </button>
@@ -6570,8 +6564,328 @@
         doc.text('BOOKING WITH RESERVATIONS - ' + globalQualityIssues + ' issue(s) detected', 20, yPosition);
       }
       doc.setTextColor(0, 0, 0);
-      
-      // Footer
+
+      // ════════════════════════════════════════════════════════════════════════
+      // INDIVIDUAL REPORTS — appended after global summary
+      // ════════════════════════════════════════════════════════════════════════
+
+      // Build ordered list: controlled first (booking order), then ignored
+      const controlledOrdered = bookingReferences
+        .filter(r => completedReferences.has(r.reference))
+        .map(r => r.reference);
+
+      const ignoredOrdered = bookingReferences
+        .filter(r => ignoredReferences.has(r.reference))
+        .map(r => r.reference);
+
+      const allToReport = [...controlledOrdered, ...ignoredOrdered];
+
+      if (allToReport.length > 0) {
+
+        // ── Separator page ────────────────────────────────────────────────────
+        doc.addPage();
+        doc.setFillColor(colors.primary[0], colors.primary[1], colors.primary[2]);
+        doc.rect(0, 0, 210, 297, 'F');
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(28);
+        doc.setFont(undefined, 'bold');
+        doc.text('INDIVIDUAL REPORTS', 105, 120, { align: 'center' });
+
+        doc.setFontSize(14);
+        doc.setFont(undefined, 'normal');
+        doc.text('Booking: ' + currentBooking.number, 105, 145, { align: 'center' });
+        doc.text('Controlled references: ' + controlledOrdered.length, 105, 162, { align: 'center' });
+        doc.text('Skipped references: ' + ignoredOrdered.length, 105, 178, { align: 'center' });
+        doc.text(new Date().toLocaleDateString('en-GB'), 105, 200, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
+
+        // ── Helper to add individual report content into doc ──────────────────
+        function appendIndividualReport(refKey) {
+          const refData = bookingQualityResults[refKey];
+
+          // ── Error page if data is missing ────────────────────────────────────
+          if (!refData || !refData.product) {
+            doc.addPage();
+            doc.setFillColor(colors.danger[0], colors.danger[1], colors.danger[2]);
+            doc.rect(10, 10, 190, 25, 'F');
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(16);
+            doc.setFont(undefined, 'bold');
+            doc.text('INDIVIDUAL REPORT — ERROR', 20, 28);
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'normal');
+            doc.text('Reference: ' + refKey, 20, 55);
+            doc.text('Booking: ' + (currentBooking ? currentBooking.number : 'N/A'), 20, 68);
+            doc.setTextColor(colors.danger[0], colors.danger[1], colors.danger[2]);
+            doc.setFont(undefined, 'bold');
+            doc.text('ERROR: Insufficient data to generate this individual report.', 20, 90);
+            doc.text('Product information not found in database.', 20, 103);
+            doc.setTextColor(0, 0, 0);
+            return;
+          }
+
+          const iH = 8;   // individual lineHeight
+          const iSS = 15; // individual sectionSpacing
+          const iPH = 270; // individual pageHeight
+
+          // ── First page of individual report ──────────────────────────────────
+          doc.addPage();
+          let iY = 20;
+
+          // Header
+          doc.setFillColor(colors.primary[0], colors.primary[1], colors.primary[2]);
+          doc.rect(10, 10, 190, 25, 'F');
+          doc.setTextColor(255, 255, 255);
+          doc.setFontSize(20);
+          doc.setFont(undefined, 'bold');
+          doc.text('QUALITY CONTROL MATRIX', 20, 28);
+          doc.setTextColor(0, 0, 0);
+          doc.setLineWidth(0.5);
+          doc.line(20, 40, 190, 40);
+          iY = 50;
+
+          // Control summary
+          doc.setFontSize(14);
+          doc.setFont(undefined, 'bold');
+          doc.text('CONTROL SUMMARY', 20, iY);
+          const dateText2 = new Date().toLocaleDateString('en-GB');
+          doc.setFontSize(11);
+          doc.setFont(undefined, 'normal');
+          doc.text(dateText2, 190 - doc.getTextWidth(dateText2), iY);
+          iY += 10;
+          doc.setFontSize(11);
+          doc.text('Reference: ' + (refData.product[COL_REF] || 'N/A'), 20, iY); iY += iH;
+          doc.text('Booking: ' + (currentBooking ? currentBooking.number : 'N/A'), 20, iY); iY += iH;
+          doc.text('Supplier: ' + (currentSupplier || 'N/A'), 20, iY); iY += iH;
+          iY += iH;
+          doc.setFontSize(13);
+          doc.setFont(undefined, 'bold');
+          doc.text('Carton: ' + (refData.cartonNumber || 'Not specified'), 20, iY);
+          iY += iH + iSS;
+
+          // Helper: add product header on new page
+          function iAddHeader() {
+            doc.addPage();
+            let hY = 20;
+            doc.setFontSize(14); doc.setFont(undefined, 'bold');
+            doc.text('PRODUCT INFORMATION', 20, hY); hY += 12;
+            const hCW = [30, 30, 35, 25, 20, 35];
+            const hH = ['Reference','Code','Brand','Color','Size','EAN'];
+            const hV = [
+              refData.product[COL_REF]||'N/A', refData.product[COL_CODE]||'N/A',
+              refData.product[COL_MARQUE]||'N/A', refData.product[COL_COULEUR]||'N/A',
+              refData.product[COL_TAILLE]||'N/A', refData.product[COL_EAN]||'N/A'
+            ];
+            let hX = 20; doc.setFontSize(8); doc.setFont(undefined,'bold');
+            hH.forEach((h,i) => { doc.rect(hX,hY,hCW[i],10); doc.text(h,hX+2,hY+7); hX+=hCW[i]; });
+            hY+=10; hX=20; doc.setFont(undefined,'normal');
+            hV.forEach((v,i) => {
+              doc.rect(hX,hY,hCW[i],10);
+              let dv=v; const lim=[12,12,14,8,8,14];
+              if(v.length>lim[i]) dv=v.substring(0,lim[i])+'...';
+              doc.text(dv,hX+2,hY+7); hX+=hCW[i];
+            });
+            return hY+10+iSS;
+          }
+
+          // Product info table
+          if (iY > iPH - 60) { iY = iAddHeader(); } else {
+            doc.setLineWidth(0.5); doc.rect(15,iY-8,180,15);
+            doc.setFontSize(14); doc.setFont(undefined,'bold'); doc.text('PRODUCT INFORMATION',20,iY);
+            iY += 12;
+            const pCW=[30,30,35,25,20,35];
+            const pH2=['Reference','Code','Brand','Color','Size','EAN'];
+            const pV=[
+              refData.product[COL_REF]||'N/A', refData.product[COL_CODE]||'N/A',
+              refData.product[COL_MARQUE]||'N/A', refData.product[COL_COULEUR]||'N/A',
+              refData.product[COL_TAILLE]||'N/A', refData.product[COL_EAN]||'N/A'
+            ];
+            let pX=20; doc.setFontSize(8); doc.setFont(undefined,'bold');
+            pH2.forEach((h,i) => { doc.rect(pX,iY,pCW[i],10); doc.text(h,pX+2,iY+7); pX+=pCW[i]; });
+            iY+=10; pX=20; doc.setFont(undefined,'normal');
+            pV.forEach((v,i) => {
+              doc.rect(pX,iY,pCW[i],10);
+              let dv=v; const lim=[12,12,14,8,8,14];
+              if(v.length>lim[i]) dv=v.substring(0,lim[i])+'...';
+              doc.text(dv,pX+2,iY+7); pX+=pCW[i];
+            });
+            iY+=10+iSS;
+          }
+
+          // Compliance matrix
+          if (iY > iPH - 80) { doc.addPage(); iY = 20; }
+          doc.setLineWidth(0.5); doc.rect(15,iY-8,180,15);
+          doc.setFontSize(14); doc.setFont(undefined,'bold'); doc.text('COMPLIANCE MATRIX',20,iY);
+          iY += 12;
+          const mCW=[80,35,20,40];
+          const mH=['Criterion','Result','Photos','Notes'];
+          let mX=20; doc.setFontSize(10); doc.setFont(undefined,'bold'); doc.setLineWidth(0.3);
+          mH.forEach((h,i) => { doc.rect(mX,iY,mCW[i],10); doc.text(h,mX+2,iY+7); mX+=mCW[i]; });
+          iY+=10;
+
+          // Carton check
+          doc.setFont(undefined,'bold'); doc.rect(20,iY,175,8); doc.text('CARTON CHECK',22,iY+6); iY+=8;
+          [
+            {key:'shipping_mark',label:'Shipping Mark'},
+            {key:'package_condition',label:'Package Condition'},
+            {key:'warranty_seal',label:'Warranty Seal'}
+          ].forEach(c => {
+            if(iY>iPH-15){doc.addPage();iY=20;}
+            const r=refData.packageQuality[c.key];
+            const st=r?(r.status==='ok'?'OK':'NOT OK'):'-';
+            const ph=r&&r.photos?r.photos.length:0;
+            const cm=r&&r.comment?r.comment.substring(0,20)+(r.comment.length>20?'...':''):'-';
+            let cx=20; doc.setFont(undefined,'normal');
+            [c.label,st,ph.toString(),cm].forEach((t,i)=>{doc.rect(cx,iY,mCW[i],8);doc.text(t,cx+2,iY+6);cx+=mCW[i];});
+            iY+=8;
+          });
+
+          // Product check
+          doc.setFont(undefined,'bold'); doc.rect(20,iY,175,8); doc.text('PRODUCT CHECK',22,iY+6); iY+=8;
+          [
+            {key:'zip_test',label:'Zip check'},
+            {key:'button_check',label:'Button check'},
+            {key:'color_check',label:'Color check'},
+            {key:'finishing_check',label:'Finishing check'}
+          ].forEach(c => {
+            if(iY>iPH-15){doc.addPage();iY=20;}
+            const r=refData.productQuality[c.key];
+            let st='-';
+            if(r){st=r.status==='ok'?'OK':r.status==='not_ok'?'NOT OK':'N/A';}
+            const ph=r&&r.photos?r.photos.length:0;
+            const cm=r&&r.comment?r.comment.substring(0,20)+(r.comment.length>20?'...':''):'-';
+            let cx=20; doc.setFont(undefined,'normal');
+            [c.label,st,ph.toString(),cm].forEach((t,i)=>{doc.rect(cx,iY,mCW[i],8);doc.text(t,cx+2,iY+6);cx+=mCW[i];});
+            iY+=8;
+          });
+
+          // EAN check
+          doc.setFont(undefined,'bold'); doc.rect(20,iY,175,8);
+          let eanSum='NOT PERFORMED';
+          if(ignoredReferences.has(refKey)){eanSum='REFERENCE SKIPPED';}
+          else if(refData.eanControl){
+            const tot=refData.eanControl.total||0;
+            const fnd=refData.eanControl.checked?refData.eanControl.checked.length:0;
+            const pct=tot>0?Math.round((fnd/tot)*100):0;
+            eanSum=pct+'% ('+fnd+'/'+tot+' verified)';
+          }
+          doc.text('EAN CHECK | '+eanSum,22,iY+6); iY+=8+iSS;
+
+          // Documentary photos
+          let totalPh=0;
+          Object.values(refData.packageQuality||{}).forEach(r=>{if(r&&r.photos)totalPh+=r.photos.length;});
+          Object.values(refData.productQuality||{}).forEach(r=>{if(r&&r.photos)totalPh+=r.photos.length;});
+
+          if(totalPh>0){
+            if(iY>iPH-100){iY=iAddHeader();}
+            doc.setLineWidth(0.5); doc.rect(15,iY-8,180,15);
+            doc.setFontSize(14); doc.setFont(undefined,'bold'); doc.text('DOCUMENTARY PHOTOS',20,iY); iY+=15;
+            const phW=70,phH=52,phPerRow=2,phMarg=10;
+            const allPh={};
+            Object.entries(refData.packageQuality||{}).forEach(([k,r])=>{if(r&&r.photos&&r.photos.length>0)allPh[k]=r.photos;});
+            Object.entries(refData.productQuality||{}).forEach(([k,r])=>{if(r&&r.photos&&r.photos.length>0)allPh[k]=r.photos;});
+            const cLabels={
+              shipping_mark:'CARTON - Shipping Mark',package_condition:'CARTON - Package Condition',
+              warranty_seal:'CARTON - Warranty Seal',zip_test:'PRODUCT - Zip check',
+              button_check:'PRODUCT - Button check',color_check:'PRODUCT - Color check',
+              finishing_check:'PRODUCT - Finishing check'
+            };
+            Object.entries(allPh).forEach(([cn,photos])=>{
+              if(!photos.length) return;
+              const rows=Math.ceil(photos.length/phPerRow);
+              const space=15+(rows*(phH+20));
+              if(iY+space>iPH-20){iY=iAddHeader();}
+              doc.setFontSize(11); doc.setFont(undefined,'bold');
+              doc.setTextColor(colors.primary[0],colors.primary[1],colors.primary[2]);
+              doc.text((cLabels[cn]||cn)+' ('+photos.length+' photo'+(photos.length>1?'s':'')+')',20,iY);
+              doc.setTextColor(0,0,0); iY+=8;
+              const cr=refData.packageQuality[cn]||refData.productQuality[cn];
+              if(cr&&cr.comment){
+                doc.setFontSize(9); doc.setFont(undefined,'italic'); doc.setTextColor(100,100,100);
+                const cmt='Comment: '+cr.comment;
+                doc.text(cmt.length>80?cmt.substring(0,80)+'...':cmt,20,iY);
+                doc.setTextColor(0,0,0); iY+=6;
+              }
+              const startY2=iY; let maxY2=iY;
+              photos.forEach((photo,idx)=>{
+                const row=Math.floor(idx/phPerRow),col=idx%phPerRow;
+                const px=25+col*(phW+phMarg);
+                const py=startY2+row*(phH+15);
+                if(py+phH>iPH-10){iY=iAddHeader();return;}
+                try{
+                  doc.addImage(photo.data,'JPEG',px,py,phW,phH);
+                  doc.setFontSize(7); doc.setTextColor(100,100,100);
+                  doc.text(photo.timestamp,px,py+phH+6); doc.setTextColor(0,0,0);
+                  maxY2=Math.max(maxY2,py+phH+15);
+                }catch(e){
+                  doc.setFontSize(8); doc.text('[Image unavailable: '+photo.name+']',px,py+15);
+                  maxY2=Math.max(maxY2,py+25);
+                }
+              });
+              iY=maxY2+5;
+            });
+          }
+
+          // Conclusion
+          if(iY>iPH-60){iY=iAddHeader();}
+          iY+=iSS;
+          const fPkgIss=Object.values(refData.packageQuality||{}).filter(r=>r.status==='not_ok').length;
+          const fPrdIss=Object.values(refData.productQuality||{}).filter(r=>r.status==='not_ok').length;
+          const fTotal=fPkgIss+fPrdIss;
+          const evalPkg=Object.values(refData.packageQuality||{}).filter(r=>r.status).length;
+          const evalPrd=Object.values(refData.productQuality||{}).filter(r=>r.status).length;
+          const totCrit=(Object.keys(refData.packageQuality||{}).length)+(Object.keys(refData.productQuality||{}).length);
+          const ctrlStatus=(evalPkg+evalPrd)<totCrit?'PARTIEL':'COMPLET';
+          let iConclusion,iConcColor;
+          if(fTotal===0){iConclusion='CONTROL PASSED - Product compliant';iConcColor=colors.success;}
+          else if(ctrlStatus==='PARTIEL'){iConclusion='PARTIAL REPORT - Control in progress';iConcColor=colors.warning;}
+          else{
+            iConclusion='CONTROL WITH RESERVATIONS';iConcColor=colors.danger;
+            const probs=[];
+            const pkgPr=[];
+            if(refData.packageQuality.shipping_mark?.status==='not_ok')pkgPr.push('Shipping Mark');
+            if(refData.packageQuality.package_condition?.status==='not_ok')pkgPr.push('Package Condition');
+            if(refData.packageQuality.warranty_seal?.status==='not_ok')pkgPr.push('Warranty Seal');
+            if(pkgPr.length)probs.push('• Carton: '+pkgPr.join(', '));
+            const prdPr=[];
+            if(refData.productQuality.zip_test?.status==='not_ok')prdPr.push('Zip check');
+            if(refData.productQuality.button_check?.status==='not_ok')prdPr.push('Button check');
+            if(refData.productQuality.color_check?.status==='not_ok')prdPr.push('Color check');
+            if(refData.productQuality.finishing_check?.status==='not_ok')prdPr.push('Finishing check');
+            if(prdPr.length)probs.push('• Product: '+prdPr.join(', '));
+            if(refData.eanControl&&refData.eanControl.nonTested&&refData.eanControl.nonTested.length>0){
+              const tot=refData.eanControl.total||0,fnd=refData.eanControl.checked?refData.eanControl.checked.length:0;
+              probs.push('• EAN: '+refData.eanControl.nonTested.length+' codes not tested ('+fnd+'/'+tot+' verified)');
+            }
+            iConclusion+='\nIssues detected:\n'+probs.join('\n');
+          }
+          doc.setFillColor(colors.primary[0],colors.primary[1],colors.primary[2]);
+          doc.rect(10,iY-5,190,15,'F');
+          doc.setTextColor(255,255,255); doc.setFontSize(14); doc.setFont(undefined,'bold');
+          doc.text('CONTROL RESULT',20,iY+5); iY+=20;
+          doc.setFontSize(12); doc.setFont(undefined,'bold');
+          doc.setTextColor(iConcColor[0],iConcColor[1],iConcColor[2]);
+          iConclusion.split('\n').forEach(line=>{
+            if(iY>iPH-15){iY=iAddHeader();}
+            doc.text(line,20,iY); iY+=iH+2;
+          });
+          doc.setTextColor(0,0,0);
+        } // end appendIndividualReport
+
+        // ── Append controlled references (booking order) ──────────────────────
+        controlledOrdered.forEach(refKey => {
+          appendIndividualReport(refKey);
+        });
+
+        // ── No individual report for ignored refs — already in global summary ─
+
+      } // end if allToReport.length > 0
+
+      // ════════════════════════════════════════════════════════════════════════
+      // FOOTER — applied to all pages now that content is complete
+      // ════════════════════════════════════════════════════════════════════════
       const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -6581,11 +6895,11 @@
         doc.text('Quality Control Matrix - Global Report - Page ' + i + '/' + pageCount, 20, 285);
         doc.text(new Date().toLocaleDateString('en-GB'), 160, 285);
       }
-      
+
       // Filename
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
       const filename = 'Global_Booking_Report_' + currentBooking.number + '_' + timestamp + '.pdf';
-      
+
       // Téléchargement ou ouverture selon le device
       if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
         window.open(doc.output('bloburl'));
