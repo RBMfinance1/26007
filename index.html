@@ -2022,6 +2022,81 @@
       font-size: 12px;
     }
 
+    /* Styles pour l'écran de choix de chargement */
+    #loadChoiceSection {
+      margin: 20px 0;
+    }
+    .load-choice-title {
+      text-align: center;
+      font-size: 1.05em;
+      font-weight: 700;
+      color: #3a4a8a;
+      margin-bottom: 14px;
+    }
+    .load-choice-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .load-choice-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 20px 12px;
+      border-radius: 14px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 0.95em;
+      transition: all 0.2s ease;
+    }
+    .load-choice-btn .choice-icon {
+      font-size: 2em;
+      line-height: 1;
+    }
+    .load-choice-btn .choice-sub {
+      font-size: 0.75em;
+      font-weight: 400;
+      opacity: 0.8;
+      text-align: center;
+    }
+    .load-choice-btn.auto {
+      background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+      border-color: #2196f3;
+      color: #0c5460;
+    }
+    .load-choice-btn.auto:hover {
+      background: linear-gradient(135deg, #bbdefb, #90caf9);
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(33,150,243,0.25);
+    }
+    .load-choice-btn.manual {
+      background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+      border-color: #ffc107;
+      color: #856404;
+    }
+    .load-choice-btn.manual:hover {
+      background: linear-gradient(135deg, #ffeaa7, #ffd54f);
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(255,193,7,0.25);
+    }
+    .load-choice-remember {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      margin-top: 12px;
+      font-size: 0.8em;
+      color: #6c7ab8;
+      cursor: pointer;
+    }
+    .load-choice-remember input[type="checkbox"] {
+      cursor: pointer;
+      accent-color: #3a7bd5;
+    }
+
     /* Styles pour le chargement automatique */
     .loading-indicator {
       display: flex;
@@ -2288,6 +2363,27 @@
       <div class="section-header">
         <h3>1️⃣ Charger les données</h3>
       </div>
+
+    <!-- Écran de choix de chargement -->
+    <div id="loadChoiceSection" style="display:none;">
+      <div class="load-choice-title">📂 Comment charger les bases de données ?</div>
+      <div class="load-choice-buttons">
+        <button class="load-choice-btn auto" onclick="userChooseAutoLoad()">
+          <span class="choice-icon">🌐</span>
+          Chargement automatique
+          <span class="choice-sub">Depuis le serveur en ligne</span>
+        </button>
+        <button class="load-choice-btn manual" onclick="userChooseManualLoad()">
+          <span class="choice-icon">📁</span>
+          Charger manuellement
+          <span class="choice-sub">Fichiers locaux ou options avancées</span>
+        </button>
+      </div>
+      <label class="load-choice-remember">
+        <input type="checkbox" id="rememberLoadChoice" />
+        Mémoriser mon choix pour les prochaines fois
+      </label>
+    </div>
 
     <!-- Chargement automatique (visible par défaut) -->
     <div id="autoLoadingSection">
@@ -2947,6 +3043,47 @@
       showAdminPanel();
     }
 
+    // ── Écran de choix de chargement BDD ─────────────────────────────────────────
+
+    function showLoadChoiceScreen() {
+      // Vérifier si un choix a été mémorisé
+      const remembered = localStorage.getItem('qc_load_choice');
+      if (remembered === 'auto') {
+        startAutoLoading();
+        return;
+      }
+      if (remembered === 'manual') {
+        showAdminPanel();
+        return;
+      }
+      // Sinon afficher l'écran de choix
+      document.getElementById('loadChoiceSection').style.display = 'block';
+      document.getElementById('autoLoadingSection').style.display = 'none';
+      document.getElementById('adminSection').classList.remove('show');
+      document.getElementById('adminSection').classList.add('hidden');
+    }
+
+    function userChooseAutoLoad() {
+      _saveLoadChoiceIfChecked('auto');
+      document.getElementById('loadChoiceSection').style.display = 'none';
+      startAutoLoading();
+    }
+
+    function userChooseManualLoad() {
+      _saveLoadChoiceIfChecked('manual');
+      document.getElementById('loadChoiceSection').style.display = 'none';
+      showAdminPanel();
+    }
+
+    function _saveLoadChoiceIfChecked(choice) {
+      const cb = document.getElementById('rememberLoadChoice');
+      if (cb && cb.checked) {
+        localStorage.setItem('qc_load_choice', choice);
+      } else {
+        localStorage.removeItem('qc_load_choice');
+      }
+    }
+
     // Fonction pour démarrer le chargement automatique
     function startAutoLoading() {
       autoLoadingCancelled = false;
@@ -3123,12 +3260,12 @@
           // Scroll vers le haut
           document.getElementById('step1').scrollIntoView({ behavior: 'smooth' });
           
-          window.NotificationManager.show('Cache vidé avec succès! Redémarrage du chargement automatique.', 'success');
+          window.NotificationManager.show('Cache vidé. Choisissez comment recharger les données.', 'info');
           
-          // Redémarrer le chargement automatique
+          // Afficher l'écran de choix
           setTimeout(() => {
-            startAutoLoading();
-          }, 1000);
+            showLoadChoiceScreen();
+          }, 500);
           
         } catch (error) {
           console.error('Erreur lors de la réinitialisation:', error);
@@ -7079,8 +7216,8 @@
           proceedToBookingSelection();
         }, 500);
       } else {
-        // Sinon, démarrer le chargement automatique
-        startAutoLoading();
+        // Pas de données en cache → afficher l'écran de choix
+        showLoadChoiceScreen();
       }
     });
 
@@ -7238,32 +7375,44 @@
         document.getElementById('loginModal').style.display = 'none';
         document.getElementById('logoutBtn').style.display = 'inline-block';
         errorDiv.textContent = '';
-        
-        // Démarrer le chargement automatique
-        startAutoLoading();
-      } else {
-        errorDiv.textContent = '❌ Mot de passe incorrect';
-        document.getElementById('passwordInput').value = '';
-      }
-    }
 
-    function checkPassword() {
-      const enteredPassword = document.getElementById('passwordInput').value;
-      const errorDiv = document.getElementById('loginError');
+        // Vérifier si les données sont déjà en cache localStorage
+        const savedDatabase = window.StorageManager.load('database');
+        const savedBookingData = window.StorageManager.load('bookingData');
+        const savedAvailableBookings = window.StorageManager.load('availableBookings');
 
-      if (enteredPassword === MASTER_PASSWORD) {
-        sessionStorage.setItem('authenticated', 'true');
-        document.getElementById('loginModal').style.display = 'none';
-        document.getElementById('logoutBtn').style.display = 'inline-block';
-        errorDiv.textContent = '';
-        
-        // Démarrer le chargement automatique
-        startAutoLoading();
+        if (savedDatabase && savedBookingData && savedAvailableBookings) {
+          // Données déjà en cache → restaurer et passer à l'étape 2 directement
+          database = savedDatabase;
+          bookingData = savedBookingData;
+          availableBookings = savedAvailableBookings;
+          bddLoaded = true;
+          bookingLoaded = true;
 
-        // Afficher la modale collaborateur si pas encore sélectionné
-        setTimeout(() => {
-          if (!currentCollaborateur) showCollaborateurModal();
-        }, 800);
+          const savedCurrentBooking = window.StorageManager.load('currentBooking');
+          const savedBookingReferences = window.StorageManager.load('bookingReferences');
+          const savedBookingQualityResults = window.StorageManager.load('bookingQualityResults');
+          if (savedCurrentBooking && savedBookingReferences) {
+            currentBooking = savedCurrentBooking;
+            bookingReferences = savedBookingReferences;
+            if (savedBookingQualityResults) bookingQualityResults = savedBookingQualityResults;
+          }
+          const savedCompletedBookings = window.StorageManager.load('completedBookings');
+          if (savedCompletedBookings) completedBookings = new Set(savedCompletedBookings);
+          const savedIgnoredReferences = window.StorageManager.load('ignoredReferences');
+          if (savedIgnoredReferences) ignoredReferences = new Set(savedIgnoredReferences);
+
+          setTimeout(() => {
+            proceedToBookingSelection();
+            if (!currentCollaborateur) showCollaborateurModal();
+          }, 500);
+        } else {
+          // Pas de cache → afficher l'écran de choix
+          showLoadChoiceScreen();
+          setTimeout(() => {
+            if (!currentCollaborateur) showCollaborateurModal();
+          }, 800);
+        }
       } else {
         errorDiv.textContent = '❌ Mot de passe incorrect';
         document.getElementById('passwordInput').value = '';
@@ -7272,7 +7421,11 @@
 
     function logout() {
       sessionStorage.removeItem('authenticated');
-      location.reload();
+      // Afficher la modale de login sans recharger la page
+      document.getElementById('loginModal').style.display = 'flex';
+      document.getElementById('logoutBtn').style.display = 'none';
+      document.getElementById('passwordInput').value = '';
+      document.getElementById('loginError').textContent = '';
     }
 
     window.addEventListener('DOMContentLoaded', () => {
