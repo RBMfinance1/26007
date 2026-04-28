@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
-  <title>Matrice Contrôle Qualité - v5.01</title>
+  <title>Matrice Contrôle Qualité - v6.00</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -31,12 +31,12 @@
     // 📊 Configuration pour le fichier de BDD (fichier CSV)
     // ⚠️  Ces colonnes sont généralement fixes mais vous pouvez les ajuster si nécessaire
     
-    const COL_REF = 0;      // 📍 Colonne A = Référence produit
-    const COL_CODE = 1;     // 📍 Colonne B = Code article  
-    const COL_COULEUR = 2;  // 📍 Colonne C = Couleur
-    const COL_TAILLE = 3;   // 📍 Colonne E = Taille
-    const COL_MARQUE = 4;   // 📍 Colonne H = Marque
-    const COL_EAN = 5;     // 📍 Colonne K = Code EAN
+    const COL_REF = 1;      // 📍 Colonne B = Item_ref (Référence produit)
+    const COL_CODE = 2;     // 📍 Colonne C = Item_code (Code article)
+    const COL_COULEUR = 5;  // 📍 Colonne F = Color_name_fr (Couleur)
+    const COL_TAILLE = 6;   // 📍 Colonne G = Taille_name_fr (Taille)
+    const COL_MARQUE = 7;   // 📍 Colonne H = Marque_name_fr (Marque)
+    const COL_EAN = 8;      // 📍 Colonne I = Ia_ean (Code EAN)
     
     // ================================================================================================
     // 🔚 FIN DE LA CONFIGURATION - Ne modifiez pas le code en dessous sauf si nécessaire
@@ -2339,7 +2339,7 @@
         <button onclick="toggleStep1()" class="toggle-step1-btn" id="toggleStep1Btn">
           <span class="toggle-icon">⚙️</span>
         </button>
-        <h1>🔍 Matrice Contrôle Qualité - v5.01</h1>
+        <h1>🔍 Matrice Contrôle Qualité - v6.00</h1>
       </div>
       <div class="header-right">
         <button onclick="checkAdminPassword()" class="admin-header-btn">
@@ -2408,19 +2408,19 @@
     <div id="adminSection" class="admin-panel hidden">
       <h4>🔧 Administration</h4>
 
-      <!-- Sélection du repo GitHub -->
+      <!-- URL Google Apps Script -->
       <div style="margin-bottom:14px;padding:12px 14px;background:#f0f4ff;border:1px solid #c5d0f0;border-radius:10px;">
-        <div style="font-size:0.82em;color:#3a4a8a;font-weight:600;margin-bottom:8px;">📦 Repo GitHub (source BDD &amp; Booking)</div>
+        <div style="font-size:0.82em;color:#3a4a8a;font-weight:600;margin-bottom:8px;">🔗 URL Google Apps Script (source BDD &amp; Booking)</div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <input id="adminRepoInput" type="text" placeholder="ex: 26007"
-            style="flex:1;padding:9px 12px;border:1.5px solid #b0bde8;border-radius:8px;font-size:1em;font-weight:bold;letter-spacing:1px;"
-            onkeydown="if(event.key==='Enter') applyGithubRepo();" />
-          <button onclick="applyGithubRepo()"
+          <input id="adminRepoInput" type="url" placeholder="https://script.google.com/macros/s/.../exec"
+            style="flex:1;padding:9px 12px;border:1.5px solid #b0bde8;border-radius:8px;font-size:0.85em;"
+            onkeydown="if(event.key==='Enter') applyDriveScriptUrl();" />
+          <button onclick="applyDriveScriptUrl()"
             style="background:linear-gradient(135deg,#3a7bd5,#1a5bb5);color:white;border:none;padding:9px 14px;border-radius:8px;font-weight:bold;cursor:pointer;white-space:nowrap;">
             ✅ Appliquer
           </button>
         </div>
-        <div style="font-size:0.78em;color:#6c7ab8;margin-top:6px;">Défaut : 26007 — modifiable sans recharger la page</div>
+        <div style="font-size:0.78em;color:#6c7ab8;margin-top:6px;">L'URL est sauvegardée localement — saisissez-la une seule fois</div>
       </div>
 
       <div class="admin-buttons">
@@ -2888,27 +2888,26 @@
     let autoLoadingCancelled = false;
     const ADMIN_PASSWORD = "1970";
 
-    // ── Repo GitHub configurable ──────────────────────────────────────────────
-    const DEFAULT_GITHUB_REPO = '26007';
-    let GITHUB_REPO = localStorage.getItem('qc_github_repo') || DEFAULT_GITHUB_REPO;
+    // ── Google Apps Script configurable ──────────────────────────────────────
+    const DEFAULT_DRIVE_SCRIPT_URL = '';
+    let DRIVE_SCRIPT_URL = localStorage.getItem('qc_drive_script_url') || DEFAULT_DRIVE_SCRIPT_URL;
 
-    function getGithubBase() {
-      return 'https://rbmfinance1.github.io/' + GITHUB_REPO;
+    function saveDriveScriptUrl(url) {
+      url = url.trim();
+      if (!url) return;
+      DRIVE_SCRIPT_URL = url;
+      localStorage.setItem('qc_drive_script_url', url);
     }
 
-    function saveGithubRepo(repoId) {
-      repoId = repoId.trim();
-      if (!repoId) return;
-      GITHUB_REPO = repoId;
-      localStorage.setItem('qc_github_repo', repoId);
-    }
-
-    function applyGithubRepo() {
+    function applyDriveScriptUrl() {
       const input = document.getElementById('adminRepoInput');
       const val = input ? input.value.trim() : '';
-      if (!val) { window.NotificationManager.show('Veuillez saisir un numéro de repo', 'warning'); return; }
-      saveGithubRepo(val);
-      window.NotificationManager.show('✅ Repo ' + val + ' enregistré — rechargement des données...', 'info', 3000);
+      if (!val) { window.NotificationManager.show('Veuillez saisir l\'URL du script Google', 'warning'); return; }
+      if (!val.startsWith('https://script.google.com/')) {
+        window.NotificationManager.show('⚠️ L\'URL doit commencer par https://script.google.com/', 'warning'); return;
+      }
+      saveDriveScriptUrl(val);
+      window.NotificationManager.show('✅ URL enregistrée — rechargement des données...', 'info', 3000);
       setTimeout(() => loadAllOnlineFiles(), 1000);
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -2927,9 +2926,9 @@
         adminSection.classList.add('show');
       }, 10);
 
-      // Initialiser le champ repo avec la valeur courante
+      // Initialiser le champ avec l'URL courante
       const repoInput = document.getElementById('adminRepoInput');
-      if (repoInput) repoInput.value = GITHUB_REPO;
+      if (repoInput) repoInput.value = DRIVE_SCRIPT_URL;
     }
 
     // Fonction pour masquer le bloc admin
@@ -3371,56 +3370,33 @@
 
 
     function loadOnlineCSVSequential() {
-      return new Promise((resolve, reject) => {
-        // Mettre à jour l'indicateur de chargement
-        document.querySelector('.loading-indicator').innerHTML = '<span class="loading-spinner"></span>Chargement de la base de données en ligne...';
-        
-        const alternativeUrls = [
-          getGithubBase() + '/bdd.csv'
-        ];
-        
-        async function tryUrls(urlIndex = 0) {
-          if (urlIndex >= alternativeUrls.length) {
-            reject(new Error('Toutes les sources en ligne ont échoué'));
-            return;
-          }
-          
-          const currentUrl = alternativeUrls[urlIndex];
-          
-          try {
-            const response = await fetch(currentUrl, {
-              method: 'GET',
-              mode: 'cors',
-              cache: 'no-cache',
-              headers: {
-                'Accept': 'text/csv,text/plain,*/*'
-              }
-            });
-            
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            
-            const csvData = await response.text();
-            
-            if (csvData.includes('<!DOCTYPE') || csvData.includes('<html>')) {
-              throw new Error('Contenu HTML reçu au lieu de CSV');
-            }
-            
-            if (csvData.trim().length < 10) {
-              throw new Error('Fichier CSV vide ou trop court');
-            }
-            
-            processCsvData(csvData);
-            resolve();
-            
-          } catch (error) {
-            console.warn(`Source BDD ${urlIndex + 1} échouée:`, error.message);
-            tryUrls(urlIndex + 1);
-          }
+      return new Promise(async (resolve, reject) => {
+        document.querySelector('.loading-indicator').innerHTML = '<span class="loading-spinner"></span>Chargement de la base de données depuis Google Drive...';
+
+        if (!DRIVE_SCRIPT_URL) {
+          reject(new Error('URL du script Google Apps Script non configurée'));
+          return;
         }
-        
-        tryUrls(0);
+
+        try {
+          const url = DRIVE_SCRIPT_URL + '?action=getBDD&t=' + Date.now();
+          const response = await fetch(url, { method: 'GET', cache: 'no-cache' });
+
+          if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+          const data = await response.json();
+          if (!data.ok || !data.csv) throw new Error(data.error || 'Fichier BDD introuvable sur Drive');
+
+          if (data.csv.trim().length < 10) throw new Error('Fichier BDD vide ou trop court');
+          if (data.csv.includes('<!DOCTYPE') || data.csv.includes('<html>')) throw new Error('Contenu HTML reçu au lieu de CSV');
+
+          await processCsvData(data.csv);
+          resolve();
+
+        } catch (error) {
+          console.error('Erreur chargement BDD depuis Drive:', error.message);
+          reject(error);
+        }
       });
     }
 
@@ -3463,60 +3439,38 @@
 
 
     function loadOnlineBookingSequential() {
-      return new Promise((resolve, reject) => {
+      return new Promise(async (resolve, reject) => {
         if (!bddLoaded) {
           reject(new Error('Base de données non chargée'));
           return;
         }
 
-        // Mettre à jour l'indicateur de chargement
-        document.querySelector('.loading-indicator').innerHTML = '<span class="loading-spinner"></span>Chargement du fichier booking en ligne...';
-        
-        const alternativeUrls = [
-          getGithubBase() + '/booking.csv'
-        ];
-        
-        async function tryBookingUrls(urlIndex = 0) {
-          if (urlIndex >= alternativeUrls.length) {
-            console.log('Toutes les sources de booking ont échoué');
-            reject(new Error('Toutes les sources en ligne ont échoué'));
-            return;
-          }
-          
-          const currentUrl = alternativeUrls[urlIndex];
-          console.log(`Tentative booking ${urlIndex + 1}:`, currentUrl);
-          
-          try {
-            const response = await fetch(currentUrl, {
-              method: 'GET',
-              mode: 'cors',
-              cache: 'no-cache',
-              headers: {
-               'Accept': 'text/csv,text/plain,*/*'
-              }
-            });
-            
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            
-            const csvData = await response.text();
+        document.querySelector('.loading-indicator').innerHTML = '<span class="loading-spinner"></span>Chargement du fichier booking depuis Google Drive...';
 
-            if (csvData.trim().length < 10) {
-              throw new Error('Fichier CSV vide ou trop court');
-            }
-
-            console.log('✅ Chargement booking réussi avec:', currentUrl);
-            processBookingData(csvData, true);
-            resolve();
-              
-          } catch (error) {
-            console.log(`Source booking ${urlIndex + 1} échouée:`, error.message);
-            tryBookingUrls(urlIndex + 1);
-          }
+        if (!DRIVE_SCRIPT_URL) {
+          reject(new Error('URL du script Google Apps Script non configurée'));
+          return;
         }
-        
-        tryBookingUrls(0);
+
+        try {
+          const url = DRIVE_SCRIPT_URL + '?action=getBooking&t=' + Date.now();
+          const response = await fetch(url, { method: 'GET', cache: 'no-cache' });
+
+          if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+          const data = await response.json();
+          if (!data.ok || !data.csv) throw new Error(data.error || 'Fichier booking introuvable sur Drive');
+
+          if (data.csv.trim().length < 10) throw new Error('Fichier booking vide ou trop court');
+
+          console.log('✅ Chargement booking réussi depuis Google Drive');
+          await processBookingData(data.csv, true);
+          resolve();
+
+        } catch (error) {
+          console.error('Erreur chargement booking depuis Drive:', error.message);
+          reject(error);
+        }
       });
     }
 
@@ -3641,13 +3595,11 @@
   let fileName, fileUrl;
   
   if (fileType === 'bdd') {
-    // 📊 Configuration pour le fichier BDD (CSV)
     fileName = 'bdd.csv';
-    fileUrl = getGithubBase() + '/bdd.csv';
+    fileUrl = DRIVE_SCRIPT_URL ? DRIVE_SCRIPT_URL + '?action=getBDD' : '#';
   } else {
-    // 📋 Configuration pour le fichier BOOKING (CSV)
     fileName = 'booking.csv';
-    fileUrl = getGithubBase() + '/booking.csv';
+    fileUrl = DRIVE_SCRIPT_URL ? DRIVE_SCRIPT_URL + '?action=getBooking' : '#';
   }
   
   // ================================================================================================
